@@ -8,7 +8,11 @@ import { test as gbTest } from "./index.js";
 import { clearRegistry, getRegistry } from "./internal.js";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const td = (name: string) => resolve(__dirname, "../testdata", name);
 
 // =============================================================================
 // toArray() utility
@@ -35,7 +39,7 @@ test("toArray - empty array returns empty array", () => {
 // =============================================================================
 
 test("fromCsv - loads basic CSV with headers", async () => {
-  const data = await fromCsv("./packages/sdk/testdata/cases.csv");
+  const data = await fromCsv(td("cases.csv"));
   expect(data.length).toBe(3);
   expect(data[0]).toEqual({ id: "1", country: "US", expected: "200" });
   expect(data[1]).toEqual({ id: "2", country: "JP", expected: "200" });
@@ -43,7 +47,7 @@ test("fromCsv - loads basic CSV with headers", async () => {
 });
 
 test("fromCsv - custom separator (TSV)", async () => {
-  const data = await fromCsv("./packages/sdk/testdata/cases.tsv", {
+  const data = await fromCsv(td("cases.tsv"), {
     separator: "\t",
   });
   expect(data.length).toBe(2);
@@ -52,7 +56,7 @@ test("fromCsv - custom separator (TSV)", async () => {
 });
 
 test("fromCsv - handles quoted fields", async () => {
-  const data = await fromCsv("./packages/sdk/testdata/quoted.csv");
+  const data = await fromCsv(td("quoted.csv"));
   expect(data.length).toBe(2);
   expect(data[0].name).toBe("Alice");
   expect(data[0].description).toBe('Has a "nickname"');
@@ -61,7 +65,7 @@ test("fromCsv - handles quoted fields", async () => {
 });
 
 test("fromCsv - without headers uses numeric keys", async () => {
-  const data = await fromCsv("./packages/sdk/testdata/cases.csv", {
+  const data = await fromCsv(td("cases.csv"), {
     headers: false,
   });
   // First "row" is actually the header line
@@ -132,14 +136,14 @@ test("fromDir.concat - malformed JSON includes path context", async () => {
 // =============================================================================
 
 test("fromYaml - loads top-level array", async () => {
-  const data = await fromYaml("./packages/sdk/testdata/cases.yaml");
+  const data = await fromYaml(td("cases.yaml"));
   expect(data.length).toBe(3);
   expect(data[0]).toEqual({ id: 1, country: "US", expected: 200 });
   expect(data[1]).toEqual({ id: 2, country: "JP", expected: 200 });
 });
 
 test("fromYaml - loads nested array with pick", async () => {
-  const data = await fromYaml("./packages/sdk/testdata/nested.yaml", {
+  const data = await fromYaml(td("nested.yaml"), {
     pick: "testCases",
   });
   expect(data.length).toBe(2);
@@ -149,14 +153,14 @@ test("fromYaml - loads nested array with pick", async () => {
 
 test("fromYaml - throws on non-array root without pick", async () => {
   await expect(
-    () => fromYaml("./packages/sdk/testdata/nested.yaml"),
+    () => fromYaml(td("nested.yaml")),
   ).rejects.toThrow("root is an object, not an array");
 });
 
 test("fromYaml - throws on invalid pick path", async () => {
   await expect(
     () =>
-      fromYaml("./packages/sdk/testdata/nested.yaml", {
+      fromYaml(td("nested.yaml"), {
         pick: "nonexistent.path",
       }),
   ).rejects.toThrow('pick path "nonexistent.path" did not resolve to an array');
@@ -166,7 +170,7 @@ test(
   "fromYaml - error message suggests available array fields",
   async () => {
     try {
-      await fromYaml("./packages/sdk/testdata/nested.yaml");
+      await fromYaml(td("nested.yaml"));
       throw new Error("Should have thrown");
     } catch (e) {
       const msg = (e as Error).message;
@@ -182,7 +186,7 @@ test(
 // =============================================================================
 
 test("fromJsonl - loads JSONL file", async () => {
-  const data = await fromJsonl("./packages/sdk/testdata/requests.jsonl");
+  const data = await fromJsonl(td("requests.jsonl"));
   expect(data.length).toBe(3);
   expect(data[0]).toEqual({ method: "GET", url: "/users/1", expected: 200 });
   expect(data[2]).toEqual({ method: "POST", url: "/users", expected: 201 });
@@ -218,7 +222,7 @@ test("fromJsonl - throws on invalid JSON line", async () => {
 // =============================================================================
 
 test("fromDir - default mode: one file = one row", async () => {
-  const data = await fromDir("./packages/sdk/testdata/cases-dir/");
+  const data = await fromDir(td("cases-dir/"));
   expect(data.length).toBe(2);
 
   // Sort by _name for deterministic order
@@ -234,7 +238,7 @@ test("fromDir - default mode: one file = one row", async () => {
 });
 
 test("fromDir - default mode injects _name and _path", async () => {
-  const data = await fromDir("./packages/sdk/testdata/cases-dir/");
+  const data = await fromDir(td("cases-dir/"));
   for (const row of data) {
     expect(typeof row._name).toBe("string");
     expect(typeof row._path).toBe("string");
@@ -243,7 +247,7 @@ test("fromDir - default mode injects _name and _path", async () => {
 });
 
 test("fromDir.concat - concatenates arrays from files", async () => {
-  const data = await fromDir.concat("./packages/sdk/testdata/batches-dir/");
+  const data = await fromDir.concat(td("batches-dir/"));
   expect(data.length).toBe(4);
   // batch-001.json has ids 1,2; batch-002.json has ids 3,4
   const ids = data.map((r) => r.id);
@@ -252,14 +256,14 @@ test("fromDir.concat - concatenates arrays from files", async () => {
 
 test("fromDir - ext filter works", async () => {
   // Only .yaml files (there are none in cases-dir)
-  const data = await fromDir("./packages/sdk/testdata/cases-dir/", {
+  const data = await fromDir(td("cases-dir/"), {
     ext: ".yaml",
   });
   expect(data.length).toBe(0);
 });
 
 test("fromDir - ext accepts string", async () => {
-  const data = await fromDir("./packages/sdk/testdata/cases-dir/", {
+  const data = await fromDir(td("cases-dir/"), {
     ext: ".json",
   });
   expect(data.length).toBe(2);
@@ -280,7 +284,7 @@ test("fromDir - empty directory returns empty array", async () => {
 // =============================================================================
 
 test("fromDir.merge - merges objects from multiple files", async () => {
-  const data = await fromDir.merge("./packages/sdk/testdata/regions-dir/");
+  const data = await fromDir.merge(td("regions-dir/"));
 
   // eu-west.json has 2 keys, us-east.json has 2 keys → 4 total
   expect(Object.keys(data).length).toBe(4);
@@ -291,7 +295,7 @@ test("fromDir.merge - merges objects from multiple files", async () => {
 });
 
 test("fromDir.merge - preserves all keys", async () => {
-  const data = await fromDir.merge("./packages/sdk/testdata/regions-dir/");
+  const data = await fromDir.merge(td("regions-dir/"));
 
   const keys = Object.keys(data).sort();
   expect(keys).toEqual(["eu-west-1", "eu-west-2", "us-east-1", "us-east-2"]);

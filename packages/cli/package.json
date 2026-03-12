@@ -6,6 +6,15 @@
     "gb": "./bin/gb.js",
     "glubean": "./bin/gb.js"
   },
+  "files": [
+    "bin",
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
   "dependencies": {
     "@glubean/sdk": "workspace:*",
     "@glubean/runner": "workspace:*",

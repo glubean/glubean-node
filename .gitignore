@@ -1,3 +1,21 @@
 node_modules/
 dist/
 .tmp-test*/
+
+# tsc inline output (build outputs go to dist/)
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts.map
+packages/*/testdata/**/*.js
+packages/*/testdata/**/*.d.ts
+
+# root-level build artifacts
+*.tsbuildinfo
+vitest.config.js
+vitest.config.d.ts
+package-lock.json
+
+# test-project build artifacts
+test-project/**/*.js
+test-project/**/*.d.ts

@@ -10,18 +10,18 @@
 
 | # | 项 | 验收标准 | 状态 |
 |---|-----|---------|------|
-| P0-1 | 干净安装验证 | 在全新空目录 `npm/pnpm add @glubean/sdk @glubean/cli`，不依赖 monorepo/workspace/本地源码，`import "@glubean/sdk"` 成功 | ❌ |
-| P0-2 | npm pack 产物验证 | 每个包 `npm pack` 后 tarball 只含 dist/、package.json、README；无 src/*.ts、绝对路径、workspace 软链 | ❌ |
-| P0-3 | exports 可用性 | Node ESM 能 `import`；TypeScript 能拿到类型补全；CLI `gb` 命令可执行 | ❌ |
+| P0-1 | 干净安装验证 | 在全新空目录 `npm/pnpm add @glubean/sdk @glubean/cli`，不依赖 monorepo/workspace/本地源码，`import "@glubean/sdk"` 成功 | ✅ npm pack → clean install → `npx gb run .` 通过 (2026-03-12) |
+| P0-2 | npm pack 产物验证 | 每个包 `npm pack` 后 tarball 只含 dist/、package.json、README；无 src/*.ts、绝对路径、workspace 软链 | ✅ 6 包均 dist-only，无 .ts 源码泄漏 (2026-03-12) |
+| P0-3 | exports 可用性 | Node ESM 能 `import`；TypeScript 能拿到类型补全；CLI `gb` 命令可执行 | ✅ ESM import 成功，`gb --version` / `gb run .` 均可执行 (2026-03-12) |
 | P0-4 | Node 版本矩阵 | Node 20 (LTS) + Node 22 (LTS) 均通过。tsx 声称支持 18+，需实际验证 | ❌ |
-| P0-5 | 无 Deno 残留 | 发布包内 grep 无 `Deno.`、`deno.json`、`--allow-*`、`@std/`、JSR import | ❌ |
+| P0-5 | 无 Deno 残留 | 发布包内 grep 无 `Deno.`、`deno.json`、`--allow-*`、`@std/`、JSR import | ✅ scanner 保留 `jsr:` 检测模式(向后兼容)，无实际 Deno 依赖 (2026-03-12) |
 
 ### 端到端功能
 
 | # | 项 | 验收标准 | 状态 |
 |---|-----|---------|------|
-| P0-6 | CLI 端到端 | 从用户视角 `gb run .`：发现测试、执行、正确 exit code、可读输出 | ✅ spike 验证 |
-| P0-7 | SDK 最小用户链路 | 第三方项目 `import { test } from "@glubean/sdk"` 写测试并运行成功，不需要了解 monorepo 结构 | ❌ workspace 内通过，clean temp project 未验证 |
+| P0-6 | CLI 端到端 | 从用户视角 `gb run .`：发现测试、执行、正确 exit code、可读输出 | ✅ clean temp project 全链路通过 (2026-03-12) |
+| P0-7 | SDK 最小用户链路 | 第三方项目 `import { test } from "@glubean/sdk"` 写测试并运行成功，不需要了解 monorepo 结构 | ✅ clean temp project 验证通过 (2026-03-12) |
 | P0-8 | 构建/类型检查闭环 | `tsc --noEmit` 全绿，构建产物可用，无缺失 @types/node | ⚠️ 指定 `-p` 通过，裸跑报 TS2688 (types resolve 不完整) |
 | P0-9 | 文档与实际一致 | README 安装 + 首个示例可逐字复现成功 | ❌ (文档未写) |
 

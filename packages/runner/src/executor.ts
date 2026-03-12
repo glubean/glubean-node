@@ -216,7 +216,8 @@ export class TestExecutor {
   private options: ExecutorOptions;
 
   constructor(options: ExecutorOptions = {}) {
-    this.harnessPath = resolve(__dirname, "harness.ts");
+    // Use .js (compiled) — works with tsx and matches npm-published dist/
+    this.harnessPath = resolve(__dirname, "harness.js");
     this.options = options;
   }
 

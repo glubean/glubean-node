@@ -15,6 +15,16 @@ importers:
         specifier: ^4.0.18
         version: 4.0.18(@types/node@22.19.15)(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/auth:
+    dependencies:
+      '@glubean/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+
   packages/cli:
     dependencies:
       '@glubean/redaction':
@@ -64,18 +74,18 @@ importers:
   packages/runner:
     dependencies:
       '@glubean/sdk':
-        specifier: workspace:*
-        version: link:../sdk
+        specifier: ^0.1.0
+        version: 0.1.0
       ky:
         specifier: ^1.14.0
         version: 1.14.3
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15
-      tsx:
-        specifier: ^4.19.0
-        version: 4.21.0
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -265,6 +275,9 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@glubean/sdk@0.1.0':
+    resolution: {integrity: sha512-5SIkyNrC20Y6F3leBIsSgoS4wEjCovNSKyZ6ypgi0XHbiN1AYnTUdIvigSWuFvYKb0CGuOP6ooHfqOV8ujYLwA==}
 
   '@inquirer/ansi@1.0.2':
     resolution: {integrity: sha512-S8qNSZiYzFd0wAcyG5AXCvUHC5Sr7xpZ9wZ2py9XR88jUz8wooStVx5M6dRzczbBWjic9NP7+rY0Xi7qqK/aMQ==}
@@ -1203,6 +1216,10 @@ snapshots:
 
   '@esbuild/win32-x64@0.27.3':
     optional: true
+
+  '@glubean/sdk@0.1.0':
+    dependencies:
+      yaml: 2.8.2
 
   '@inquirer/ansi@1.0.2': {}
 
