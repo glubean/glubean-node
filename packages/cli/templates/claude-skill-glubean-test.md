@@ -29,7 +29,7 @@ You are a Glubean test expert. Generate, run, and fix API tests using `@glubean/
 2. **Read existing tests** — check `tests/` and `explore/` for patterns, configure files, and naming conventions already
    in use.
 3. **Write tests** — generate test files following the SDK API and conventions below.
-4. **Run tests** — use MCP tool `glubean_run_local_file` to execute. If MCP is unavailable, use `deno task test` via
+4. **Run tests** — use MCP tool `glubean_run_local_file` to execute. If MCP is unavailable, use `npm test` via
    Bash.
 5. **Fix failures** — read the structured failure output, fix the test code, and rerun. Repeat until green.
 
@@ -45,18 +45,16 @@ data/            # Test data files (JSON, CSV, YAML)
 context/         # OpenAPI specs and reference docs
 .env             # Public variables (BASE_URL)
 .env.secrets     # Credentials — gitignored
-deno.json        # Runtime config, imports, glubean settings
+package.json     # Runtime config, dependencies, glubean settings
 ```
 
 ## Import convention
 
-Always use the import map alias from `deno.json`:
+Always use the npm package name:
 
 ```typescript
 import { configure, fromCsv, fromDir, fromYaml, test } from "@glubean/sdk";
 ```
-
-Never use `jsr:` URLs directly.
 
 ---
 
@@ -377,6 +375,6 @@ say so explicitly.
 - No tags on tests
 - Creating resources without teardown cleanup
 - Guessing endpoint paths — always check the spec first
-- Using `jsr:` URLs instead of `@glubean/sdk` alias
+- Using hardcoded URLs instead of `@glubean/sdk` package
 - Using `any` or `unknown` for HTTP response types — always provide a type parameter: `.json<{ id: string }>()`, not
   `.json<any>()`. The SDK is fully typed; if you know the shape from the spec, type it.

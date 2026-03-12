@@ -5,7 +5,7 @@
  * The trace viewer shows all three requests as a connected flow, not
  * isolated calls. That's the difference between Glubean and a REST client.
  *
- * Run: deno task explore
+ * Run: npm run explore
  */
 import { test } from "@glubean/sdk";
 

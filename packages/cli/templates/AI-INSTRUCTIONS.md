@@ -1,6 +1,6 @@
 # Glubean Test Project
 
-API test automation project using `@glubean/sdk`. Runtime is **Deno**. Packages are from **JSR**.
+API test automation project using `@glubean/sdk`. Runtime is **Node.js**. Packages are from **npm**.
 
 ## Project Structure
 
@@ -11,15 +11,15 @@ data/            # Test data files (JSON, CSV, YAML)
 context/         # API specs and reference docs for AI and tooling
 .env             # Public variables (BASE_URL)
 .env.secrets     # Credentials — gitignored
-deno.json        # Runtime config, imports, glubean settings
+package.json     # Runtime config, dependencies, glubean settings
 ```
 
 ## Setup
 
-If `deno check` or `glubean run` fails with module-not-found errors, run:
+If `glubean run` fails with module-not-found errors, run:
 
 ```bash
-deno install
+npm install
 ```
 
 ## BEFORE Writing or Modifying Any Test (MANDATORY)
@@ -85,14 +85,11 @@ Cover all applicable boundaries unless the user asked for a narrower scope.
 
 ## Import Convention
 
-Always use the import map alias defined in `deno.json`, never hardcoded JSR URLs:
+Always use the npm package name:
 
 ```typescript
 // Correct
 import { test } from "@glubean/sdk";
-
-// Wrong — breaks tooling features like trace grouping
-import { test } from "jsr:@glubean/sdk@^X.Y.Z";
 ```
 
 ## Conventions
@@ -125,7 +122,7 @@ without human intervention.
 ### Claude Code
 
 ```bash
-claude mcp add glubean -- deno run -A jsr:@glubean/mcp
+claude mcp add glubean -- npx @glubean/mcp
 ```
 
 ### Cursor
@@ -136,8 +133,8 @@ Add to `~/.cursor/mcp.json`:
 {
   "mcpServers": {
     "glubean": {
-      "command": "deno",
-      "args": ["run", "-A", "jsr:@glubean/mcp"]
+      "command": "npx",
+      "args": ["@glubean/mcp"]
     }
   }
 }
@@ -148,7 +145,7 @@ Add to `~/.cursor/mcp.json`:
 - `glubean_run_local_file` — run a test file locally, returns structured results (assertions, logs, traces)
 - `glubean_discover_tests` — scan a file and return test export metadata (id, name, tags)
 - `glubean_list_test_files` — list all test files in the project
-- `glubean_diagnose_config` — check project config for common issues (.env, deno.json, dirs)
+- `glubean_diagnose_config` — check project config for common issues (.env, package.json, dirs)
 - `glubean_get_last_run_summary` — get summary of the most recent local run
 - `glubean_get_local_events` — get filtered events (assertions, logs, traces) from the last run; useful for debugging
   failures

@@ -112,7 +112,7 @@ export const scenarioTests = test.each(
 
     return { status: res.status };
   })
-  // deno-lint-ignore require-await
+  // eslint-disable-next-line @typescript-eslint/require-await
   .step("log result", async (ctx, state, row) => {
     ctx.log(`${row.method} ${row.path} → ${state.status}`);
   });

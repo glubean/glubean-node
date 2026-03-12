@@ -5,7 +5,7 @@
  * auto-traced so you can inspect headers, timing, and response
  * bodies in the trace viewer.
  *
- * Run: deno task explore
+ * Run: npm run explore
  */
 import { test } from "@glubean/sdk";
 

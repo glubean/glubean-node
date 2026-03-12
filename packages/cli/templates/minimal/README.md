@@ -4,7 +4,7 @@ This is a quick playground for exploring APIs with [Glubean](https://glubean.com
 request traced.
 
 ```bash
-deno task explore
+npm run explore
 ```
 
 ## What's here

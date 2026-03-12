@@ -5,7 +5,7 @@
  * outcome. In VS Code, CodeLens buttons appear above the test so you can
  * click a specific example to run.
  *
- * Run all:      deno task explore
+ * Run all:      npm run explore
  * Pick one:     glubean run explore/search.test.ts --pick by-name
  * Pick another: glubean run explore/search.test.ts --pick no-results
  */
