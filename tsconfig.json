@@ -8,5 +8,8 @@
     "skipLibCheck": true,
     "declaration": true,
     "types": ["node"]
-  }
+  },
+  "exclude": [
+    "packages/scanner/testdata"
+  ]
 }

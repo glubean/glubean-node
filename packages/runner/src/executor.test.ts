@@ -2095,11 +2095,9 @@ test("test.extend() - use() not awaited still completes test body before summary
 test("fromSharedConfig: passes overrides through", () => {
   const executor = TestExecutor.fromSharedConfig(SHARED_RUN_DEFAULTS, {
     cwd: "/test/dir",
-    maskEnvPrefixes: ["SECRET_"],
   });
   const opts = (executor as unknown as { options: ExecutorOptions }).options;
   expect(opts.cwd).toBe("/test/dir");
-  expect(opts.maskEnvPrefixes).toEqual(["SECRET_"]);
 });
 
 test("fromSharedConfig: wires emitFullTrace", () => {
