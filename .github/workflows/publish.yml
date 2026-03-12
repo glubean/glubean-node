@@ -51,6 +51,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Publish @glubean/mcp
+        run: pnpm --filter @glubean/mcp publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish @glubean/cli
         run: pnpm --filter @glubean/cli publish --access public --no-git-checks
         env:
