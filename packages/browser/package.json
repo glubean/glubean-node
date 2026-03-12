@@ -1,0 +1,33 @@
+{
+  "name": "@glubean/browser",
+  "version": "0.1.2",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@glubean/sdk": "workspace:*",
+    "puppeteer-core": "^24.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  },
+  "peerDependencies": {
+    "puppeteer-core": ">=22"
+  },
+  "peerDependenciesMeta": {
+    "puppeteer-core": {
+      "optional": false
+    }
+  }
+}
