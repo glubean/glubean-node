@@ -22,6 +22,7 @@ import { loginCommand } from "./commands/login.js";
 import { patchCommand } from "./commands/patch.js";
 import { specSplitCommand } from "./commands/spec_split.js";
 import { workerCommand } from "./commands/worker.js";
+import { redactCommand } from "./commands/redact.js";
 import { abortUpdateCheck, checkForUpdates } from "./update_check.js";
 
 const program = new Command();
@@ -304,6 +305,30 @@ workerCmd
       token: options.token,
       logLevel: options.logLevel,
       workerId: options.workerId,
+    });
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// redact command
+// ─────────────────────────────────────────────────────────────────────────────
+program
+  .command("redact")
+  .description("Preview redaction on a result JSON file")
+  .option("-i, --input <path>", "Input result JSON file (default: glubean-run.result.json)")
+  .option("-o, --output <path>", "Output file path (default: <input>.redacted.json)")
+  .option("--stdout", "Write redacted JSON to stdout")
+  .option("--config <paths>", "Config file(s), comma-separated or repeatable", collect, [])
+  .action(async (options) => {
+    const configFiles = options.config && options.config.length > 0
+      ? (options.config as string[]).flatMap((v: string) =>
+        v.split(",").map((s: string) => s.trim()).filter(Boolean)
+      )
+      : undefined;
+    await redactCommand({
+      input: options.input,
+      output: options.output,
+      stdout: options.stdout,
+      config: configFiles,
     });
   });
 
