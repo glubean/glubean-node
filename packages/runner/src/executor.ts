@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { readFile, writeFile, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
+import { dirname, resolve, join } from "node:path";
 import { createRequire } from "node:module";
 import type { ApiTrace, GlubeanAction, GlubeanEvent } from "@glubean/sdk";
 import type { SharedRunConfig } from "./config.js";
@@ -290,9 +291,43 @@ export class TestExecutor {
       env["NODE_OPTIONS"] = nodeOptions.join(" ");
     }
 
+    // ── Zero-project mode ────────────────────────────────────────────────────
+    // If the user's cwd has no node_modules/@glubean/sdk, inject a custom
+    // ESM resolver so `import { test } from "@glubean/sdk"` resolves from
+    // the runner's own dependencies. Also create a temporary package.json
+    // with "type":"module" if none exists (so .js files are treated as ESM).
+    const cwd = this.options.cwd || process.cwd();
+    const zeroProject = !existsSync(join(cwd, "node_modules", "@glubean", "sdk"));
+    let tempPackageJson = false;
+
+    const tsxArgs: string[] = [];
+
+    if (zeroProject) {
+      const registerPath = resolve(__dirname, "zero-project-register.mjs");
+      tsxArgs.push("--import", registerPath);
+
+      // Point resolver to the node_modules that contains @glubean/sdk.
+      // import.meta.resolve works for ESM-only packages; returns a file:// URL.
+      // Walk up: dist/index.js → dist → @glubean/sdk → @glubean → node_modules
+      const sdkUrl = import.meta.resolve("@glubean/sdk");
+      const sdkEntry = fileURLToPath(sdkUrl); // .../dist/index.js
+      env["GLUBEAN_VENDORED_ROOT"] = resolve(dirname(sdkEntry), "../../..");
+
+      // Ensure .js files are treated as ESM
+      if (!existsSync(join(cwd, "package.json"))) {
+        try {
+          const { writeFileSync } = await import("node:fs");
+          writeFileSync(join(cwd, "package.json"), '{"type":"module"}\n');
+          tempPackageJson = true;
+        } catch {
+          // Non-critical — .mjs files still work
+        }
+      }
+    }
+
     // Spawn tsx subprocess via node
-    const child = spawn("node", [resolveTsxPath(), ...args], {
-      cwd: this.options.cwd,
+    const child = spawn("node", [resolveTsxPath(), ...tsxArgs, ...args], {
+      cwd,
       env,
       stdio: ["pipe", "pipe", inspectBrk ? "inherit" : "pipe"],
     });
@@ -402,6 +437,17 @@ export class TestExecutor {
             type: "error",
             message: `Process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}`,
           });
+        }
+      }
+
+      // Clean up temporary package.json created for zero-project mode
+      if (tempPackageJson) {
+        try {
+          import("node:fs").then(({ unlinkSync }) => {
+            unlinkSync(join(cwd, "package.json"));
+          }).catch(() => {});
+        } catch {
+          // Non-critical
         }
       }
 
