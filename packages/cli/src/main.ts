@@ -1,149 +1,342 @@
-import { parseArgs } from "node:util";
-import { resolve, relative } from "node:path";
-import { readdir, stat } from "node:fs/promises";
-import { TestExecutor, resolveModuleTests } from "@glubean/runner";
+/**
+ * Glubean CLI - Main entry point
+ *
+ * Uses Commander.js for structured command handling with automatic help
+ * generation, argument validation, and shell completions.
+ */
 
-const { positionals, values } = parseArgs({
-  args: process.argv.slice(2),
-  options: {
-    filter: { type: "string", short: "f" },
-    verbose: { type: "boolean", short: "v", default: false },
-    timeout: { type: "string", short: "t" },
-  },
-  allowPositionals: true,
-  strict: false,
-});
+// Support running from outside workspace (e.g. shell alias with GLUBEAN_CWD)
+const _cwd = process.env["GLUBEAN_CWD"];
+if (_cwd) process.chdir(_cwd);
 
-const command = positionals[0];
+import { Command } from "commander";
+import { CLI_VERSION } from "./version.js";
+import { loadConfig } from "./lib/config.js";
+import { initCommand } from "./commands/init.js";
+import { runCommand } from "./commands/run.js";
+import { scanCommand } from "./commands/scan.js";
+import { syncCommand } from "./commands/sync.js";
+import { triggerCommand } from "./commands/trigger.js";
+import { validateMetadataCommand } from "./commands/validate_metadata.js";
+import { loginCommand } from "./commands/login.js";
+import { patchCommand } from "./commands/patch.js";
+import { specSplitCommand } from "./commands/spec_split.js";
+import { workerCommand } from "./commands/worker.js";
+import { abortUpdateCheck, checkForUpdates } from "./update_check.js";
 
-if (!command || command === "help") {
-  console.log(`
-  gb - Glubean CLI (Node.js)
+const program = new Command();
 
-  Usage:
-    gb run [file|dir]       Run tests
-    gb run . --filter id    Run a specific test
+program
+  .name("glubean")
+  .alias("gb")
+  .version(CLI_VERSION)
+  .description("Glubean CLI - Run and sync API tests from the command line")
+  .option("--no-update-check", "Skip update check");
 
-  Options:
-    -f, --filter <id>       Run only tests matching this ID
-    -v, --verbose           Show detailed output
-    -t, --timeout <ms>      Per-test timeout (default: 30000)
-`);
-  process.exit(0);
-}
-
-if (command === "run") {
-  const target = positionals[1] || ".";
-  const filterTestId = values.filter as string | undefined;
-  const verbose = values.verbose as boolean;
-  const timeout = values.timeout ? parseInt(values.timeout as string, 10) : 30000;
-
-  // Resolve test files
-  const testFiles = await resolveTestFiles(resolve(process.cwd(), target));
-
-  if (testFiles.length === 0) {
-    console.log("No test files found.");
-    process.exit(1);
-  }
-
-  const executor = new TestExecutor({
-    cwd: process.cwd(),
+// ─────────────────────────────────────────────────────────────────────────────
+// init command
+// ─────────────────────────────────────────────────────────────────────────────
+program
+  .command("init")
+  .description("Initialize a new test project (interactive wizard)")
+  .option("--minimal", "Scaffold minimal explore-only project (GET, POST, pick)")
+  .option("--hooks", "Install git hooks (pre-commit, pre-push)")
+  .option("--github-actions", "Scaffold GitHub Actions workflow")
+  .option("--base-url <url>", "API base URL for .env")
+  .option("--no-interactive", "Disable prompts (use with flags)")
+  .option("--overwrite", "Overwrite existing files (dangerous)")
+  .option("--overwrite-hooks", "Overwrite existing .git/hooks files")
+  .option("--overwrite-actions", "Overwrite GitHub Actions workflow")
+  .action(async (options) => {
+    await initCommand({
+      minimal: options.minimal,
+      hooks: options.hooks,
+      githubActions: options.githubActions,
+      baseUrl: options.baseUrl,
+      interactive: options.interactive,
+      overwrite: options.overwrite,
+      overwriteHooks: options.overwriteHooks,
+      overwriteActions: options.overwriteActions,
+    });
   });
 
-  let totalTests = 0;
-  let totalPassed = 0;
-  let totalFailed = 0;
-  const startTime = Date.now();
+// ─────────────────────────────────────────────────────────────────────────────
+// run command
+// ─────────────────────────────────────────────────────────────────────────────
+program
+  .command("run [target]")
+  .description("Run tests from a file, directory, or glob pattern (defaults to testDir)")
+  .option("--explore", "Run explore tests (from exploreDir instead of testDir)")
+  .option("-f, --filter <pattern>", "Run only tests matching pattern (name or id substring)")
+  .option("-t, --tag <tag>", "Run only tests with matching tag (comma-separated or repeatable)", collect, [])
+  .option("--tag-mode <mode>", 'Tag match logic: "or" (any tag) or "and" (all tags)', "or")
+  .option("--env-file <path>", "Path to .env file", ".env")
+  .option("-l, --log-file", "Write logs to file (<testfile>.log)")
+  .option("--pretty", "Pretty-print JSON in log file (2-space indent)")
+  .option("--verbose", "Show all output (traces, assertions) in console")
+  .option("--fail-fast", "Stop on first test failure")
+  .option("--fail-after <count>", "Stop after N test failures")
+  .option("--result-json [path]", "Write structured results to .result.json (or custom path)")
+  .option("--emit-full-trace", "Include full request/response headers and bodies in HTTP traces")
+  .option("--config <paths>", "Config file(s), comma-separated or repeatable", collect, [])
+  .option("--pick <keys>", "Select specific test.pick example(s) by key (comma-separated)")
+  .option("--inspect-brk [port]", "Enable V8 Inspector for debugging (pauses until debugger attaches)")
+  .option("--reporter <format>", 'Output format: "junit" or "junit:/path/to/output.xml"')
+  .option("--trace-limit <count>", "Max trace files to keep per test (default: 20)")
+  .option("--ci", "CI mode: enables --fail-fast and --reporter junit")
+  .option("--upload", "Upload run results and artifacts to Glubean Cloud")
+  .option("--project <id>", "Glubean Cloud project ID (or GLUBEAN_PROJECT_ID env)")
+  .option("--token <token>", "Auth token for cloud upload (or GLUBEAN_TOKEN env)")
+  .option("--api-url <url>", "Glubean API server URL")
+  .action(async (target, options) => {
+    // Flatten --config values
+    const configFiles = options.config && options.config.length > 0
+      ? (options.config as string[]).flatMap((v: string) =>
+        v.split(",").map((s: string) => s.trim()).filter(Boolean)
+      )
+      : undefined;
 
-  for (const file of testFiles) {
-    const relPath = relative(process.cwd(), file);
+    // Resolve default target from config when not explicitly provided
+    let resolvedTarget = target;
+    if (!resolvedTarget) {
+      const config = await loadConfig(process.cwd(), configFiles);
+      resolvedTarget = options.explore ? config.run.exploreDir : config.run.testDir;
+    }
 
-    // Discover tests in the file
-    const mod = await import(file);
-    const tests = resolveModuleTests(mod);
+    // --ci implies --fail-fast and --reporter junit
+    const isCi = options.ci === true;
+    const failFast = options.failFast || isCi;
+    let reporter = options.reporter;
+    let reporterPath: string | undefined;
+    if (!reporter && isCi) {
+      reporter = "junit";
+    }
+    if (reporter && reporter.startsWith("junit:")) {
+      reporterPath = reporter.slice("junit:".length);
+      reporter = "junit";
+    }
 
-    if (tests.length === 0) continue;
+    const resultJson = options.resultJson;
 
-    // Filter if needed
-    const toRun = filterTestId
-      ? tests.filter((t) => t.id === filterTestId || t.id.includes(filterTestId))
-      : tests;
+    await runCommand(resolvedTarget, {
+      filter: options.filter,
+      pick: options.pick,
+      tags: options.tag?.flatMap((t: string) => t.split(",").map((s: string) => s.trim()).filter(Boolean)),
+      tagMode: options.tagMode as "or" | "and",
+      envFile: options.envFile,
+      logFile: options.logFile,
+      pretty: options.pretty,
+      verbose: options.verbose,
+      failFast,
+      failAfter: options.failAfter ? parseInt(options.failAfter, 10) : undefined,
+      resultJson,
+      emitFullTrace: options.emitFullTrace,
+      configFiles,
+      inspectBrk: options.inspectBrk,
+      reporter,
+      reporterPath,
+      traceLimit: options.traceLimit ? parseInt(options.traceLimit, 10) : undefined,
+      upload: options.upload,
+      project: options.project,
+      token: options.token,
+      apiUrl: options.apiUrl,
+    });
+  });
 
-    if (toRun.length === 0) continue;
+// ─────────────────────────────────────────────────────────────────────────────
+// scan command
+// ─────────────────────────────────────────────────────────────────────────────
+program
+  .command("scan")
+  .description("Generate metadata.json from a directory")
+  .option("-d, --dir <path>", "Directory to scan", ".")
+  .option("--out <path>", "Output path for metadata.json")
+  .action(async (options) => {
+    await scanCommand({
+      dir: options.dir,
+      output: options.out,
+    });
+  });
 
-    console.log(`\n  ${relPath}`);
+// ─────────────────────────────────────────────────────────────────────────────
+// validate-metadata command
+// ─────────────────────────────────────────────────────────────────────────────
+program
+  .command("validate-metadata")
+  .description("Validate metadata.json against local files")
+  .option("-d, --dir <path>", "Project root", ".")
+  .option("--metadata <path>", "Path to metadata.json")
+  .action(async (options) => {
+    await validateMetadataCommand({
+      dir: options.dir,
+      metadata: options.metadata,
+    });
+  });
 
-    for (const test of toRun) {
-      totalTests++;
-      const result = await executor.execute(file, test.id, {
-        vars: {},
-        secrets: {},
-        test: { id: test.id, tags: test.tags ?? [] },
-      }, { timeout });
+// ─────────────────────────────────────────────────────────────────────────────
+// sync command
+// ─────────────────────────────────────────────────────────────────────────────
+program
+  .command("sync")
+  .description("Sync tests to Glubean Cloud")
+  .option("-p, --project <id>", "Target project ID (required)")
+  .option("-t, --tag <version>", "Version tag (default: timestamp)")
+  .option("-d, --dir <path>", "Directory to scan", ".")
+  .option("--api-url <url>", "API server URL")
+  .option("--token <token>", "Auth token (or GLUBEAN_TOKEN env)")
+  .option("--dry-run", "Generate bundle without uploading")
+  .action(async (options) => {
+    await syncCommand({
+      project: options.project,
+      version: options.tag,
+      dir: options.dir,
+      apiUrl: options.apiUrl,
+      token: options.token,
+      dryRun: options.dryRun,
+    });
+  });
 
-      if (result.success) {
-        totalPassed++;
-        console.log(`    ✓ ${test.name || test.id}  (${result.duration}ms)`);
-      } else {
-        totalFailed++;
-        console.log(`    ✗ ${test.name || test.id}  (${result.duration}ms)`);
-        if (result.error) {
-          console.log(`      ${result.error}`);
-        }
-      }
+// ─────────────────────────────────────────────────────────────────────────────
+// trigger command
+// ─────────────────────────────────────────────────────────────────────────────
+program
+  .command("trigger")
+  .description("Trigger a remote run on Glubean Cloud")
+  .option("-p, --project <id>", "Target project ID (required)")
+  .option("-b, --bundle <id>", "Bundle ID (uses latest if not specified)")
+  .option("-j, --job <id>", "Job ID")
+  .option("-F, --follow", "Tail logs until run completes")
+  .option("--api-url <url>", "API server URL")
+  .option("--token <token>", "Auth token (or GLUBEAN_TOKEN env)")
+  .action(async (options) => {
+    await triggerCommand({
+      project: options.project,
+      bundle: options.bundle,
+      job: options.job,
+      apiUrl: options.apiUrl,
+      token: options.token,
+      follow: options.follow,
+    });
+  });
 
-      if (verbose) {
-        for (const event of result.events) {
-          if (event.type === "assertion") {
-            const mark = event.passed ? "✓" : "✗";
-            console.log(`      ${mark} ${event.message}`);
-          } else if (event.type === "log") {
-            console.log(`      ℹ ${event.message}`);
-          }
-        }
+// ─────────────────────────────────────────────────────────────────────────────
+// login command
+// ─────────────────────────────────────────────────────────────────────────────
+program
+  .command("login")
+  .description("Authenticate with Glubean Cloud")
+  .option("--token <token>", "Auth token (skip interactive prompt)")
+  .option("--project <id>", "Default project ID")
+  .option("--api-url <url>", "API server URL")
+  .action(async (options) => {
+    await loginCommand({
+      token: options.token,
+      project: options.project,
+      apiUrl: options.apiUrl,
+    });
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// patch command
+// ─────────────────────────────────────────────────────────────────────────────
+program
+  .command("patch <spec>")
+  .description("Merge an OpenAPI spec with its .patch.yaml and write the complete spec")
+  .option("--patch <file>", "Path to patch file (auto-discovered if omitted)")
+  .option("-o, --output <file>", "Output file path (default: <name>.patched.json)")
+  .option("--stdout", "Write to stdout instead of file")
+  .option("--format <fmt>", 'Output format: "json" or "yaml" (default: same as input)')
+  .action(async (spec, options) => {
+    await patchCommand(spec, {
+      patch: options.patch,
+      output: options.output,
+      stdout: options.stdout,
+      format: options.format as "json" | "yaml" | undefined,
+    });
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// spec command (with subcommands)
+// ─────────────────────────────────────────────────────────────────────────────
+const specCmd = program
+  .command("spec")
+  .description("OpenAPI spec tools");
+
+specCmd
+  .command("split <spec>")
+  .description("Dereference $refs and split spec into per-endpoint files for AI")
+  .option("-o, --output <dir>", "Output directory (default: <name>-endpoints/ next to spec)")
+  .action(async (spec, options) => {
+    await specSplitCommand(spec, { output: options.output });
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// worker command (with subcommands)
+// ─────────────────────────────────────────────────────────────────────────────
+const workerCmd = program
+  .command("worker")
+  .description("Self-hosted worker management");
+
+workerCmd
+  .command("start")
+  .description("Start worker instance(s)")
+  .option("-n, --instances <count>", "Number of instances (or 'auto')", "1")
+  .option("--config <path>", "Worker config file (JSON)")
+  .option("--api-url <url>", "Control plane URL")
+  .option("--token <token>", "Worker token (or GLUBEAN_WORKER_TOKEN env)")
+  .option("--log-level <level>", "Log level")
+  .option("--worker-id <id>", "Base worker ID (auto-generated if not set)")
+  .action(async (options) => {
+    let instances: number | "auto" | undefined;
+    if (options.instances === "auto") {
+      instances = "auto";
+    } else {
+      const parsed = parseInt(options.instances, 10);
+      if (!isNaN(parsed) && parsed >= 1) {
+        instances = parsed;
       }
     }
-  }
 
-  const duration = Date.now() - startTime;
-  console.log(`\n  ${totalPassed} passed, ${totalFailed} failed (${totalTests} total) — ${duration}ms\n`);
-  process.exit(totalFailed > 0 ? 1 : 0);
-} else {
-  console.log(`Unknown command: ${command}`);
-  console.log(`Run "gb help" for usage.`);
+    await workerCommand("start", {
+      instances,
+      config: options.config,
+      apiUrl: options.apiUrl,
+      token: options.token,
+      logLevel: options.logLevel,
+      workerId: options.workerId,
+    });
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Collect repeated options into an array (Commander.js pattern) */
+function collect(value: string, previous: string[]): string[] {
+  return previous.concat([value]);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main entry point
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Check for updates (non-blocking)
+if (!process.argv.includes("--no-update-check")) {
+  checkForUpdates(CLI_VERSION).catch(() => {});
+}
+
+try {
+  await program.parseAsync(process.argv);
+} catch (error) {
+  if (error instanceof Error) {
+    console.error(`Error: ${error.message}`);
+  } else {
+    console.error("An unexpected error occurred");
+  }
   process.exit(1);
+} finally {
+  abortUpdateCheck();
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-
-async function resolveTestFiles(target: string): Promise<string[]> {
-  const s = await stat(target);
-  if (s.isFile()) {
-    return isTestFile(target) ? [target] : [];
-  }
-
-  if (s.isDirectory()) {
-    const files: string[] = [];
-    await walkForTests(target, files);
-    return files.sort();
-  }
-
-  return [];
-}
-
-async function walkForTests(dir: string, result: string[]): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-    const full = resolve(dir, entry.name);
-    if (entry.isFile() && isTestFile(entry.name)) {
-      result.push(full);
-    } else if (entry.isDirectory()) {
-      await walkForTests(full, result);
-    }
-  }
-}
-
-function isTestFile(name: string): boolean {
-  return /\.(test|spec)\.(ts|mts|js|mjs)$/.test(name);
-}
+// Export CLI version for programmatic access
+export { CLI_VERSION } from "./version.js";

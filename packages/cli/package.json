@@ -3,14 +3,23 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "gb": "./bin/gb.js"
+    "gb": "./bin/gb.js",
+    "glubean": "./bin/gb.js"
   },
   "dependencies": {
     "@glubean/sdk": "workspace:*",
     "@glubean/runner": "workspace:*",
+    "@glubean/scanner": "workspace:*",
+    "@glubean/redaction": "workspace:*",
+    "commander": "^13.0.0",
+    "@inquirer/prompts": "^7.0.0",
+    "archiver": "^7.0.0",
+    "dotenv": "^16.4.0",
+    "yaml": "^2.7.0",
     "tsx": "^4.19.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/archiver": "^6.0.0"
   }
 }

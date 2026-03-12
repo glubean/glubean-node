@@ -1,0 +1,398 @@
+{
+  "target": "/Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts",
+  "files": [
+    "packages/cli/templates/demo.test.ts"
+  ],
+  "runAt": "2026-02-16 13:46:18",
+  "summary": {
+    "total": 6,
+    "passed": 0,
+    "failed": 6,
+    "skipped": 0,
+    "durationMs": 216,
+    "stats": {
+      "httpRequestTotal": 0,
+      "httpErrorTotal": 0,
+      "assertionTotal": 0,
+      "assertionFailed": 0,
+      "warningTotal": 0,
+      "warningTriggered": 0,
+      "stepTotal": 5,
+      "stepPassed": 0,
+      "stepFailed": 2
+    }
+  },
+  "tests": [
+    {
+      "testId": "auth-flow",
+      "testName": "Authentication Flow",
+      "tags": [
+        "auth"
+      ],
+      "success": false,
+      "durationMs": 39,
+      "events": [
+        {
+          "type": "log",
+          "message": "Loading test module: file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts"
+        },
+        {
+          "type": "start",
+          "id": "auth-flow",
+          "name": "Authentication Flow",
+          "tags": [
+            "auth"
+          ]
+        },
+        {
+          "type": "step_start",
+          "index": 0,
+          "name": "login",
+          "total": 3
+        },
+        {
+          "type": "step_end",
+          "index": 0,
+          "name": "login",
+          "status": "failed",
+          "durationMs": 0,
+          "assertions": 0,
+          "failedAssertions": 0,
+          "error": "Missing required var: BASE_URL"
+        },
+        {
+          "type": "step_end",
+          "index": 1,
+          "name": "get profile",
+          "status": "skipped",
+          "durationMs": 0,
+          "assertions": 0,
+          "failedAssertions": 0
+        },
+        {
+          "type": "step_end",
+          "index": 2,
+          "name": "refresh token",
+          "status": "skipped",
+          "durationMs": 0,
+          "assertions": 0,
+          "failedAssertions": 0
+        },
+        {
+          "type": "summary",
+          "data": {
+            "httpRequestTotal": 0,
+            "httpErrorTotal": 0,
+            "httpErrorRate": 0,
+            "assertionTotal": 0,
+            "assertionFailed": 0,
+            "warningTotal": 0,
+            "warningTriggered": 0,
+            "schemaValidationTotal": 0,
+            "schemaValidationFailed": 0,
+            "schemaValidationWarnings": 0,
+            "stepTotal": 3,
+            "stepPassed": 0,
+            "stepFailed": 1,
+            "stepSkipped": 2
+          }
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "error": "One or more steps failed",
+          "stack": "Error: One or more steps failed\n    at executeNewTest (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:1329:15)\n    at async file:///Users/peisong/glubean/oss/packages/runner/harness.ts:971:5"
+        },
+        {
+          "type": "error",
+          "message": "Process exited with code 1"
+        }
+      ]
+    },
+    {
+      "testId": "cart-integrity",
+      "testName": "Cart Data Integrity",
+      "tags": [
+        "data-integrity"
+      ],
+      "success": false,
+      "durationMs": 37,
+      "events": [
+        {
+          "type": "log",
+          "message": "Loading test module: file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts"
+        },
+        {
+          "type": "start",
+          "id": "cart-integrity",
+          "name": "Cart Data Integrity",
+          "tags": [
+            "data-integrity"
+          ]
+        },
+        {
+          "type": "summary",
+          "data": {
+            "httpRequestTotal": 0,
+            "httpErrorTotal": 0,
+            "httpErrorRate": 0,
+            "assertionTotal": 0,
+            "assertionFailed": 0,
+            "warningTotal": 0,
+            "warningTriggered": 0,
+            "schemaValidationTotal": 0,
+            "schemaValidationFailed": 0,
+            "schemaValidationWarnings": 0,
+            "stepTotal": 0,
+            "stepPassed": 0,
+            "stepFailed": 0,
+            "stepSkipped": 0
+          }
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "error": "Missing required var: BASE_URL",
+          "stack": "Error: Missing required var: BASE_URL\n    at Object.require (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:360:15)\n    at Object.fn (file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts:128:30)\n    at executeNewTest (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:1192:18)\n    at file:///Users/peisong/glubean/oss/packages/runner/harness.ts:971:11"
+        },
+        {
+          "type": "error",
+          "message": "Process exited with code 1"
+        }
+      ]
+    },
+    {
+      "testId": "list-products",
+      "testName": "List Products",
+      "tags": [
+        "smoke"
+      ],
+      "success": false,
+      "durationMs": 39,
+      "events": [
+        {
+          "type": "log",
+          "message": "Loading test module: file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts"
+        },
+        {
+          "type": "start",
+          "id": "list-products",
+          "name": "List Products",
+          "tags": [
+            "smoke"
+          ]
+        },
+        {
+          "type": "summary",
+          "data": {
+            "httpRequestTotal": 0,
+            "httpErrorTotal": 0,
+            "httpErrorRate": 0,
+            "assertionTotal": 0,
+            "assertionFailed": 0,
+            "warningTotal": 0,
+            "warningTriggered": 0,
+            "schemaValidationTotal": 0,
+            "schemaValidationFailed": 0,
+            "schemaValidationWarnings": 0,
+            "stepTotal": 0,
+            "stepPassed": 0,
+            "stepFailed": 0,
+            "stepSkipped": 0
+          }
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "error": "Missing required var: BASE_URL",
+          "stack": "Error: Missing required var: BASE_URL\n    at Object.require (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:360:15)\n    at Object.fn (file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts:21:30)\n    at executeNewTest (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:1192:18)\n    at file:///Users/peisong/glubean/oss/packages/runner/harness.ts:971:11"
+        },
+        {
+          "type": "error",
+          "message": "Process exited with code 1"
+        }
+      ]
+    },
+    {
+      "testId": "pagination-check",
+      "testName": "Pagination Consistency",
+      "tags": [
+        "data"
+      ],
+      "success": false,
+      "durationMs": 35,
+      "events": [
+        {
+          "type": "log",
+          "message": "Loading test module: file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts"
+        },
+        {
+          "type": "start",
+          "id": "pagination-check",
+          "name": "Pagination Consistency",
+          "tags": [
+            "data"
+          ]
+        },
+        {
+          "type": "summary",
+          "data": {
+            "httpRequestTotal": 0,
+            "httpErrorTotal": 0,
+            "httpErrorRate": 0,
+            "assertionTotal": 0,
+            "assertionFailed": 0,
+            "warningTotal": 0,
+            "warningTriggered": 0,
+            "schemaValidationTotal": 0,
+            "schemaValidationFailed": 0,
+            "schemaValidationWarnings": 0,
+            "stepTotal": 0,
+            "stepPassed": 0,
+            "stepFailed": 0,
+            "stepSkipped": 0
+          }
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "error": "Missing required var: BASE_URL",
+          "stack": "Error: Missing required var: BASE_URL\n    at Object.require (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:360:15)\n    at Object.fn (file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts:163:30)\n    at executeNewTest (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:1192:18)\n    at file:///Users/peisong/glubean/oss/packages/runner/harness.ts:971:11"
+        },
+        {
+          "type": "error",
+          "message": "Process exited with code 1"
+        }
+      ]
+    },
+    {
+      "testId": "search-products",
+      "testName": "Search Products",
+      "tags": [
+        "smoke"
+      ],
+      "success": false,
+      "durationMs": 33,
+      "events": [
+        {
+          "type": "log",
+          "message": "Loading test module: file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts"
+        },
+        {
+          "type": "start",
+          "id": "search-products",
+          "name": "Search Products",
+          "tags": [
+            "smoke"
+          ]
+        },
+        {
+          "type": "summary",
+          "data": {
+            "httpRequestTotal": 0,
+            "httpErrorTotal": 0,
+            "httpErrorRate": 0,
+            "assertionTotal": 0,
+            "assertionFailed": 0,
+            "warningTotal": 0,
+            "warningTriggered": 0,
+            "schemaValidationTotal": 0,
+            "schemaValidationFailed": 0,
+            "schemaValidationWarnings": 0,
+            "stepTotal": 0,
+            "stepPassed": 0,
+            "stepFailed": 0,
+            "stepSkipped": 0
+          }
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "error": "Missing required var: BASE_URL",
+          "stack": "Error: Missing required var: BASE_URL\n    at Object.require (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:360:15)\n    at Object.fn (file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts:42:30)\n    at executeNewTest (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:1192:18)\n    at file:///Users/peisong/glubean/oss/packages/runner/harness.ts:971:11"
+        },
+        {
+          "type": "error",
+          "message": "Process exited with code 1"
+        }
+      ]
+    },
+    {
+      "testId": "user-todos-integrity",
+      "testName": "User Todos Cross-Resource",
+      "tags": [
+        "data-integrity"
+      ],
+      "success": false,
+      "durationMs": 33,
+      "events": [
+        {
+          "type": "log",
+          "message": "Loading test module: file:///Users/peisong/glubean/oss/packages/cli/templates/demo.test.ts"
+        },
+        {
+          "type": "start",
+          "id": "user-todos-integrity",
+          "name": "User Todos Cross-Resource",
+          "tags": [
+            "data-integrity"
+          ]
+        },
+        {
+          "type": "step_start",
+          "index": 0,
+          "name": "fetch user",
+          "total": 2
+        },
+        {
+          "type": "step_end",
+          "index": 0,
+          "name": "fetch user",
+          "status": "failed",
+          "durationMs": 0,
+          "assertions": 0,
+          "failedAssertions": 0,
+          "error": "Missing required var: BASE_URL"
+        },
+        {
+          "type": "step_end",
+          "index": 1,
+          "name": "verify todos",
+          "status": "skipped",
+          "durationMs": 0,
+          "assertions": 0,
+          "failedAssertions": 0
+        },
+        {
+          "type": "summary",
+          "data": {
+            "httpRequestTotal": 0,
+            "httpErrorTotal": 0,
+            "httpErrorRate": 0,
+            "assertionTotal": 0,
+            "assertionFailed": 0,
+            "warningTotal": 0,
+            "warningTriggered": 0,
+            "schemaValidationTotal": 0,
+            "schemaValidationFailed": 0,
+            "schemaValidationWarnings": 0,
+            "stepTotal": 2,
+            "stepPassed": 0,
+            "stepFailed": 1,
+            "stepSkipped": 1
+          }
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "error": "One or more steps failed",
+          "stack": "Error: One or more steps failed\n    at executeNewTest (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:1329:15)\n    at async file:///Users/peisong/glubean/oss/packages/runner/harness.ts:971:5"
+        },
+        {
+          "type": "error",
+          "message": "Process exited with code 1"
+        }
+      ]
+    }
+  ]
+}

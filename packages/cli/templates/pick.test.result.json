@@ -1,0 +1,165 @@
+{
+  "target": "/Users/peisong/glubean/oss/packages/cli/templates/pick.test.ts",
+  "files": [
+    "packages/cli/templates/pick.test.ts"
+  ],
+  "runAt": "2026-02-16 13:46:18",
+  "summary": {
+    "total": 3,
+    "passed": 0,
+    "failed": 3,
+    "skipped": 0,
+    "durationMs": 101,
+    "stats": {
+      "httpRequestTotal": 0,
+      "httpErrorTotal": 0,
+      "assertionTotal": 0,
+      "assertionFailed": 0,
+      "warningTotal": 0,
+      "warningTriggered": 0,
+      "stepTotal": 0,
+      "stepPassed": 0,
+      "stepFailed": 0
+    }
+  },
+  "tests": [
+    {
+      "testId": "add-product-basic",
+      "testName": "add-product-basic",
+      "success": false,
+      "durationMs": 34,
+      "events": [
+        {
+          "type": "log",
+          "message": "Loading test module: file:///Users/peisong/glubean/oss/packages/cli/templates/pick.test.ts"
+        },
+        {
+          "type": "start",
+          "id": "add-product-premium",
+          "name": "add-product-premium"
+        },
+        {
+          "type": "summary",
+          "data": {
+            "httpRequestTotal": 0,
+            "httpErrorTotal": 0,
+            "httpErrorRate": 0,
+            "assertionTotal": 0,
+            "assertionFailed": 0,
+            "warningTotal": 0,
+            "warningTriggered": 0,
+            "schemaValidationTotal": 0,
+            "schemaValidationFailed": 0,
+            "schemaValidationWarnings": 0,
+            "stepTotal": 0,
+            "stepPassed": 0,
+            "stepFailed": 0,
+            "stepSkipped": 0
+          }
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "error": "Missing required var: BASE_URL",
+          "stack": "Error: Missing required var: BASE_URL\n    at Object.require (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:360:15)\n    at file:///Users/peisong/glubean/oss/packages/cli/templates/pick.test.ts:84:26\n    at Object.fn (file:///Users/peisong/glubean/oss/packages/sdk/mod.ts:1011:36)\n    at executeNewTest (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:1192:18)\n    at file:///Users/peisong/glubean/oss/packages/runner/harness.ts:971:11"
+        },
+        {
+          "type": "error",
+          "message": "Process exited with code 1"
+        }
+      ]
+    },
+    {
+      "testId": "create-user-normal",
+      "testName": "create-user-normal",
+      "success": false,
+      "durationMs": 34,
+      "events": [
+        {
+          "type": "log",
+          "message": "Loading test module: file:///Users/peisong/glubean/oss/packages/cli/templates/pick.test.ts"
+        },
+        {
+          "type": "start",
+          "id": "create-user-young",
+          "name": "create-user-young"
+        },
+        {
+          "type": "summary",
+          "data": {
+            "httpRequestTotal": 0,
+            "httpErrorTotal": 0,
+            "httpErrorRate": 0,
+            "assertionTotal": 0,
+            "assertionFailed": 0,
+            "warningTotal": 0,
+            "warningTriggered": 0,
+            "schemaValidationTotal": 0,
+            "schemaValidationFailed": 0,
+            "schemaValidationWarnings": 0,
+            "stepTotal": 0,
+            "stepPassed": 0,
+            "stepFailed": 0,
+            "stepSkipped": 0
+          }
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "error": "Missing required var: BASE_URL",
+          "stack": "Error: Missing required var: BASE_URL\n    at Object.require (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:360:15)\n    at file:///Users/peisong/glubean/oss/packages/cli/templates/pick.test.ts:112:26\n    at Object.fn (file:///Users/peisong/glubean/oss/packages/sdk/mod.ts:1011:36)\n    at executeNewTest (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:1192:18)\n    at file:///Users/peisong/glubean/oss/packages/runner/harness.ts:971:11"
+        },
+        {
+          "type": "error",
+          "message": "Process exited with code 1"
+        }
+      ]
+    },
+    {
+      "testId": "search-products-by-category",
+      "testName": "search-products-by-category",
+      "success": false,
+      "durationMs": 33,
+      "events": [
+        {
+          "type": "log",
+          "message": "Loading test module: file:///Users/peisong/glubean/oss/packages/cli/templates/pick.test.ts"
+        },
+        {
+          "type": "start",
+          "id": "search-products-by-category",
+          "name": "search-products-by-category"
+        },
+        {
+          "type": "summary",
+          "data": {
+            "httpRequestTotal": 0,
+            "httpErrorTotal": 0,
+            "httpErrorRate": 0,
+            "assertionTotal": 0,
+            "assertionFailed": 0,
+            "warningTotal": 0,
+            "warningTriggered": 0,
+            "schemaValidationTotal": 0,
+            "schemaValidationFailed": 0,
+            "schemaValidationWarnings": 0,
+            "stepTotal": 0,
+            "stepPassed": 0,
+            "stepFailed": 0,
+            "stepSkipped": 0
+          }
+        },
+        {
+          "type": "status",
+          "status": "failed",
+          "error": "Missing required var: BASE_URL",
+          "stack": "Error: Missing required var: BASE_URL\n    at Object.require (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:360:15)\n    at file:///Users/peisong/glubean/oss/packages/cli/templates/pick.test.ts:47:26\n    at Object.fn (file:///Users/peisong/glubean/oss/packages/sdk/mod.ts:1011:36)\n    at executeNewTest (file:///Users/peisong/glubean/oss/packages/runner/harness.ts:1192:18)\n    at file:///Users/peisong/glubean/oss/packages/runner/harness.ts:971:11"
+        },
+        {
+          "type": "error",
+          "message": "Process exited with code 1"
+        }
+      ]
+    }
+  ]
+}
