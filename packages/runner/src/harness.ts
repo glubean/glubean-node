@@ -1420,6 +1420,32 @@ try {
     process.exit(hasFailure ? 1 : 0);
   }
 
+  // ── Wildcard mode: run all tests in file ──
+  if (testId === "*") {
+    const allTests = resolveModuleTests(userModule);
+    if (allTests.length === 0) {
+      throw new Error("No tests found in module");
+    }
+    let hasFailure = false;
+    for (const resolved of allTests) {
+      resetTestCounters();
+      const obj = findTestById(userModule, resolved.id);
+      if (!obj) continue;
+      try {
+        await executeNewTest(obj);
+      } catch (error) {
+        emitSummary();
+        if (error instanceof SkipError) {
+          console.log(JSON.stringify({ type: "status", status: "skipped", id: resolved.id, reason: (error as any).reason }));
+        } else {
+          hasFailure = true;
+          console.log(JSON.stringify({ type: "status", status: "failed", id: resolved.id, error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined }));
+        }
+      }
+    }
+    process.exit(hasFailure ? 1 : 0);
+  }
+
   // ── Single test mode (default) ──
   let testObj = findTestById(userModule, testId!);
   if (!testObj && exportName) {
@@ -1469,7 +1495,7 @@ try {
 
 // Resolution utilities shared with MCP and other consumers.
 // Extracted to resolve.ts for reuse outside the sandbox.
-import { findTestByExport, findTestById } from "./resolve.js";
+import { findTestByExport, findTestById, resolveModuleTests } from "./resolve.js";
 
 /**
  * Resolve test.extend() fixtures and run the test body with an augmented context.

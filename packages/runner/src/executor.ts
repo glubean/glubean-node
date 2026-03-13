@@ -298,7 +298,8 @@ export class TestExecutor {
     // with "type":"module" if none exists (so .js files are treated as ESM).
     const cwd = this.options.cwd || process.cwd();
     const zeroProject = !existsSync(join(cwd, "node_modules", "@glubean", "sdk"));
-    let tempPackageJson = false;
+    let tempPackageJson: "created" | "patched" | false = false;
+    let originalPackageJson: string | undefined;
 
     const tsxArgs: string[] = [];
 
@@ -313,14 +314,31 @@ export class TestExecutor {
       const sdkEntry = fileURLToPath(sdkUrl); // .../dist/index.js
       env["GLUBEAN_VENDORED_ROOT"] = resolve(dirname(sdkEntry), "../../..");
 
-      // Ensure .js files are treated as ESM
-      if (!existsSync(join(cwd, "package.json"))) {
+      // Ensure .js files are treated as ESM.
+      // If no package.json → create a temp one.
+      // If package.json exists but lacks "type":"module" → patch it, restore after.
+      const pkgPath = join(cwd, "package.json");
+      if (!existsSync(pkgPath)) {
         try {
           const { writeFileSync } = await import("node:fs");
-          writeFileSync(join(cwd, "package.json"), '{"type":"module"}\n');
-          tempPackageJson = true;
+          writeFileSync(pkgPath, '{"type":"module"}\n');
+          tempPackageJson = "created";
         } catch {
           // Non-critical — .mjs files still work
+        }
+      } else {
+        try {
+          const { readFileSync, writeFileSync } = await import("node:fs");
+          const original = readFileSync(pkgPath, "utf-8");
+          const pkg = JSON.parse(original);
+          if (pkg.type !== "module") {
+            originalPackageJson = original;
+            pkg.type = "module";
+            writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+            tempPackageJson = "patched";
+          }
+        } catch {
+          // Non-critical
         }
       }
     }
@@ -440,11 +458,16 @@ export class TestExecutor {
         }
       }
 
-      // Clean up temporary package.json created for zero-project mode
+      // Clean up temporary package.json created/patched for zero-project mode
       if (tempPackageJson) {
         try {
-          import("node:fs").then(({ unlinkSync }) => {
-            unlinkSync(join(cwd, "package.json"));
+          import("node:fs").then(({ unlinkSync, writeFileSync }) => {
+            const pkgPath = join(cwd, "package.json");
+            if (tempPackageJson === "created") {
+              unlinkSync(pkgPath);
+            } else if (tempPackageJson === "patched" && originalPackageJson) {
+              writeFileSync(pkgPath, originalPackageJson);
+            }
           }).catch(() => {});
         } catch {
           // Non-critical

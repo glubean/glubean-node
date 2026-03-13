@@ -71,7 +71,7 @@ program
   .option("-f, --filter <pattern>", "Run only tests matching pattern (name or id substring)")
   .option("-t, --tag <tag>", "Run only tests with matching tag (comma-separated or repeatable)", collect, [])
   .option("--tag-mode <mode>", 'Tag match logic: "or" (any tag) or "and" (all tags)', "or")
-  .option("--env-file <path>", "Path to .env file", ".env")
+  .option("--env-file <path>", "Path to .env file (default: .env if it exists)")
   .option("-l, --log-file", "Write logs to file (<testfile>.log)")
   .option("--pretty", "Pretty-print JSON in log file (2-space indent)")
   .option("--verbose", "Show all output (traces, assertions) in console")
