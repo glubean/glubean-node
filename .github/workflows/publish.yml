@@ -26,42 +26,58 @@ jobs:
 
       # Publish packages in dependency order
       # pnpm publish converts workspace:* to real versions automatically
+      # Core packages (versions aligned)
       - name: Publish @glubean/sdk
+        continue-on-error: true
         run: pnpm --filter @glubean/sdk publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @glubean/scanner
+        continue-on-error: true
         run: pnpm --filter @glubean/scanner publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @glubean/redaction
+        continue-on-error: true
         run: pnpm --filter @glubean/redaction publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @glubean/runner
+        continue-on-error: true
         run: pnpm --filter @glubean/runner publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      - name: Publish @glubean/cli
+        continue-on-error: true
+        run: pnpm --filter @glubean/cli publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Plugin packages (versioned independently)
       - name: Publish @glubean/auth
+        continue-on-error: true
         run: pnpm --filter @glubean/auth publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @glubean/mcp
-        run: pnpm --filter @glubean/mcp publish --access public --no-git-checks
+      - name: Publish @glubean/browser
+        continue-on-error: true
+        run: pnpm --filter @glubean/browser publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish @glubean/graphql
+        continue-on-error: true
         run: pnpm --filter @glubean/graphql publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @glubean/cli
-        run: pnpm --filter @glubean/cli publish --access public --no-git-checks
+      - name: Publish @glubean/mcp
+        continue-on-error: true
+        run: pnpm --filter @glubean/mcp publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
