@@ -6,5 +6,6 @@
     "@glubean/sdk": "workspace:*",
     "@glubean/runner": "workspace:*",
     "@glubean/cli": "workspace:*"
-  }
+  },
+  "version": "0.1.6"
 }
