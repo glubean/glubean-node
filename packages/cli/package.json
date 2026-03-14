@@ -6,6 +6,12 @@
     "gb": "./bin/gb.js",
     "glubean": "./bin/gb.js"
   },
+  "exports": {
+    ".": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js"
+    }
+  },
   "files": [
     "bin",
     "dist",
@@ -13,7 +19,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build",
     "test": "vitest run"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@glubean/sdk": "workspace:*",

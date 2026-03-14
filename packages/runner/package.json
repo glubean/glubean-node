@@ -13,7 +13,11 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && cp src/zero-project-register.mjs src/zero-project-resolver.mjs dist/",
+    "prepublishOnly": "npm run build",
     "test": "vitest run"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@glubean/sdk": "^0.1.0",
