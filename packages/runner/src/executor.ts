@@ -393,6 +393,29 @@ export class TestExecutor {
       }
     }
 
+    // Use an async iterator pattern to yield events
+    const eventQueue: ExecutionEvent[] = [];
+    let resolveWait: (() => void) | undefined;
+    let done = false;
+
+    // Handle spawn failure (e.g. node not installed)
+    child.on("error", (err) => {
+      const errno = (err as NodeJS.ErrnoException).code;
+      if (errno === "ENOENT") {
+        eventQueue.push({
+          type: "error",
+          message: "NODE_NOT_FOUND: Node.js is not installed. Glubean requires Node.js 20+ to run tests.\nDownload from https://nodejs.org",
+        });
+      } else {
+        eventQueue.push({
+          type: "error",
+          message: `Failed to start test process: ${err.message}`,
+        });
+      }
+      done = true;
+      resolveWait?.();
+    });
+
     // Read stdout line by line
     let stdoutBuffer = "";
     const stderrChunks: Buffer[] = [];
@@ -400,11 +423,6 @@ export class TestExecutor {
     if (child.stderr) {
       child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
     }
-
-    // Use an async iterator pattern to yield events
-    const eventQueue: ExecutionEvent[] = [];
-    let resolveWait: (() => void) | undefined;
-    let done = false;
 
     child.stdout!.on("data", (chunk: Buffer) => {
       stdoutBuffer += chunk.toString();
