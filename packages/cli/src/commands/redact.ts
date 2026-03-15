@@ -58,10 +58,11 @@ export async function redactCommand(options: RedactCommandOptions): Promise<void
   const glubeanConfig = await loadConfig(cwd, options.config);
 
   // Apply redaction
-  const { RedactionEngine, createBuiltinPlugins, redactEvent } = await import("@glubean/redaction");
-  const engine = new RedactionEngine({
-    config: glubeanConfig.redaction,
-    plugins: createBuiltinPlugins(glubeanConfig.redaction),
+  const { compileScopes, redactEvent, BUILTIN_SCOPES } = await import("@glubean/redaction");
+  const compiledScopes = compileScopes({
+    builtinScopes: BUILTIN_SCOPES,
+    globalRules: glubeanConfig.redaction.globalRules,
+    replacementFormat: glubeanConfig.redaction.replacementFormat,
   });
 
   let redactionCount = 0;
@@ -71,7 +72,7 @@ export async function redactCommand(options: RedactCommandOptions): Promise<void
     tests: payload.tests.map((t: any) => ({
       ...t,
       events: t.events.map((e: any) => {
-        const redacted = redactEvent(engine, e);
+        const redacted = redactEvent(e, compiledScopes, glubeanConfig.redaction.replacementFormat);
         if (JSON.stringify(redacted) !== JSON.stringify(e)) {
           redactionCount++;
         }

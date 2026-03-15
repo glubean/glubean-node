@@ -1238,10 +1238,11 @@ export async function runCommand(
       console.error(`${colors.red}Upload failed: no project ID.${colors.reset}`);
       process.exit(1);
     } else {
-      const { RedactionEngine, createBuiltinPlugins, redactEvent } = await import("@glubean/redaction");
-      const engine = new RedactionEngine({
-        config: glubeanConfig.redaction,
-        plugins: createBuiltinPlugins(glubeanConfig.redaction),
+      const { compileScopes, redactEvent, BUILTIN_SCOPES } = await import("@glubean/redaction");
+      const compiledScopes = compileScopes({
+        builtinScopes: BUILTIN_SCOPES,
+        globalRules: glubeanConfig.redaction.globalRules,
+        replacementFormat: glubeanConfig.redaction.replacementFormat,
       });
 
       // Generate metadata for test registry
@@ -1264,7 +1265,7 @@ export async function runCommand(
         metadata,
         tests: resultPayload.tests.map((t) => ({
           ...t,
-          events: t.events.map((e) => redactEvent(engine, e)),
+          events: t.events.map((e) => redactEvent(e, compiledScopes, glubeanConfig.redaction.replacementFormat)),
         })),
       };
 

@@ -15,7 +15,7 @@
 
 import { resolve } from "node:path";
 import { readFile } from "node:fs/promises";
-import { DEFAULT_CONFIG } from "@glubean/redaction";
+import { DEFAULT_CONFIG, BUILTIN_SCOPES } from "@glubean/redaction";
 import type { RedactionConfig } from "@glubean/redaction";
 import { LOCAL_RUN_DEFAULTS } from "@glubean/runner";
 import type { SharedRunConfig } from "@glubean/runner";
@@ -58,13 +58,11 @@ export interface GlubeanRunConfigInput {
 
 /** Redaction config input from user files (additive fields only). */
 export interface GlubeanRedactionConfigInput {
-  sensitiveKeys?: {
-    additional?: string[];
-    excluded?: string[];
-  };
-  patterns?: {
-    custom?: Array<{ name: string; regex: string }>;
-  };
+  /** Additional global sensitive keys. */
+  sensitiveKeys?: string[];
+  /** Custom regex patterns. */
+  customPatterns?: Array<{ name: string; regex: string }>;
+  /** Override replacement format. */
   replacementFormat?: "simple" | "labeled" | "partial";
 }
 
@@ -170,25 +168,17 @@ export function mergeConfigInputs(
     }
 
     if (br.sensitiveKeys || or.sensitiveKeys) {
-      merged.redaction.sensitiveKeys = {
-        additional: [
-          ...(br.sensitiveKeys?.additional ?? []),
-          ...(or.sensitiveKeys?.additional ?? []),
-        ],
-        excluded: [
-          ...(br.sensitiveKeys?.excluded ?? []),
-          ...(or.sensitiveKeys?.excluded ?? []),
-        ],
-      };
+      merged.redaction.sensitiveKeys = [
+        ...(br.sensitiveKeys ?? []),
+        ...(or.sensitiveKeys ?? []),
+      ];
     }
 
-    if (br.patterns || or.patterns) {
-      merged.redaction.patterns = {
-        custom: [
-          ...(br.patterns?.custom ?? []),
-          ...(or.patterns?.custom ?? []),
-        ],
-      };
+    if (br.customPatterns || or.customPatterns) {
+      merged.redaction.customPatterns = [
+        ...(br.customPatterns ?? []),
+        ...(or.customPatterns ?? []),
+      ];
     }
   }
 
@@ -216,25 +206,25 @@ function resolveRedactionConfig(
 
   if (!input) return merged;
 
-  if (input.sensitiveKeys?.additional) {
-    for (const key of input.sensitiveKeys.additional) {
+  if (input.sensitiveKeys) {
+    for (const key of input.sensitiveKeys) {
       if (
         typeof key === "string" &&
-        !merged.sensitiveKeys.additional.includes(key)
+        !merged.globalRules.sensitiveKeys.includes(key)
       ) {
-        merged.sensitiveKeys.additional.push(key);
+        merged.globalRules.sensitiveKeys.push(key);
       }
     }
   }
 
-  if (input.patterns?.custom && Array.isArray(input.patterns.custom)) {
-    for (const pattern of input.patterns.custom) {
+  if (input.customPatterns && Array.isArray(input.customPatterns)) {
+    for (const pattern of input.customPatterns) {
       if (
         pattern &&
         typeof pattern.name === "string" &&
         typeof pattern.regex === "string"
       ) {
-        merged.patterns.custom.push({
+        merged.globalRules.customPatterns.push({
           name: pattern.name,
           regex: pattern.regex,
         });
@@ -258,7 +248,7 @@ const KNOWN_TOP_KEYS = new Set(["run", "redaction", "cloud", "thresholds"]);
 const KNOWN_RUN_KEYS = new Set(Object.keys(RUN_DEFAULTS));
 const KNOWN_REDACTION_KEYS = new Set([
   "sensitiveKeys",
-  "patterns",
+  "customPatterns",
   "replacementFormat",
 ]);
 const KNOWN_CLOUD_KEYS = new Set(["projectId", "apiUrl", "token"]);

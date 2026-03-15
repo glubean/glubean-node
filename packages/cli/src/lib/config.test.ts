@@ -65,7 +65,7 @@ test("readSingleConfig: package.json extracts glubean field", async () => {
         glubean: {
           run: { emitFullTrace: true },
           redaction: {
-            sensitiveKeys: { additional: ["x-custom-key"] },
+            sensitiveKeys: ["x-custom-key"],
           },
         },
       }),
@@ -73,7 +73,7 @@ test("readSingleConfig: package.json extracts glubean field", async () => {
     async (dir) => {
       const config = await readSingleConfig(resolve(dir, "package.json"));
       expect(config.run?.emitFullTrace).toBe(true);
-      expect(config.redaction?.sensitiveKeys?.additional).toEqual([
+      expect(config.redaction?.sensitiveKeys).toEqual([
         "x-custom-key",
       ]);
     },
@@ -117,26 +117,21 @@ test("mergeConfigInputs: scalar override (right wins)", () => {
 test("mergeConfigInputs: arrays concatenate", () => {
   const base: GlubeanConfigInput = {
     redaction: {
-      sensitiveKeys: { additional: ["key-a"] },
-      patterns: {
-        custom: [{ name: "pat-a", regex: "a+" }],
-      },
+      sensitiveKeys: ["key-a"],
+      customPatterns: [{ name: "pat-a", regex: "a+" }],
     },
   };
   const overlay: GlubeanConfigInput = {
     redaction: {
-      sensitiveKeys: { additional: ["key-b"], excluded: ["password"] },
-      patterns: {
-        custom: [{ name: "pat-b", regex: "b+" }],
-      },
+      sensitiveKeys: ["key-b"],
+      customPatterns: [{ name: "pat-b", regex: "b+" }],
     },
   };
   const merged = mergeConfigInputs(base, overlay);
-  expect(merged.redaction?.sensitiveKeys?.additional).toEqual(["key-a", "key-b"]);
-  expect(merged.redaction?.sensitiveKeys?.excluded).toEqual(["password"]);
-  expect(merged.redaction?.patterns?.custom?.length).toBe(2);
-  expect(merged.redaction?.patterns?.custom?.[0].name).toBe("pat-a");
-  expect(merged.redaction?.patterns?.custom?.[1].name).toBe("pat-b");
+  expect(merged.redaction?.sensitiveKeys).toEqual(["key-a", "key-b"]);
+  expect(merged.redaction?.customPatterns?.length).toBe(2);
+  expect(merged.redaction?.customPatterns?.[0].name).toBe("pat-a");
+  expect(merged.redaction?.customPatterns?.[1].name).toBe("pat-b");
 });
 
 test("mergeConfigInputs: empty inputs produce empty", () => {
@@ -176,7 +171,7 @@ test("loadConfig: no package.json returns defaults", async () => {
     expect(config.run).toEqual({ ...RUN_DEFAULTS });
     // Redaction should be the default config
     expect(config.redaction.replacementFormat).toBe("partial");
-    expect(config.redaction.scopes.requestHeaders).toBe(true);
+    expect(config.redaction.scopes.length).toBeGreaterThan(0);
   });
 });
 
@@ -207,14 +202,14 @@ test("loadConfig: --config with package.json in list (explicit)", async () => {
         glubean: {
           run: { verbose: true, pretty: true },
           redaction: {
-            sensitiveKeys: { additional: ["x-api-key"] },
+            sensitiveKeys: ["x-api-key"],
           },
         },
       }),
       "staging.json": JSON.stringify({
         run: { verbose: false },
         redaction: {
-          sensitiveKeys: { additional: ["x-staging-key"] },
+          sensitiveKeys: ["x-staging-key"],
         },
       }),
     },
@@ -223,10 +218,10 @@ test("loadConfig: --config with package.json in list (explicit)", async () => {
       expect(config.run.verbose).toBe(false); // staging overrides
       expect(config.run.pretty).toBe(true); // from package.json, not overridden
       expect(
-        config.redaction.sensitiveKeys.additional.includes("x-api-key"),
+        config.redaction.globalRules.sensitiveKeys.includes("x-api-key"),
       ).toBe(true);
       expect(
-        config.redaction.sensitiveKeys.additional.includes("x-staging-key"),
+        config.redaction.globalRules.sensitiveKeys.includes("x-staging-key"),
       ).toBe(true);
     },
   );
@@ -270,26 +265,140 @@ test("loadConfig: redaction custom patterns accumulate across files", async () =
     {
       "a.json": JSON.stringify({
         redaction: {
-          patterns: {
-            custom: [{ name: "pat-a", regex: "aaa" }],
-          },
+          customPatterns: [{ name: "pat-a", regex: "aaa" }],
         },
       }),
       "b.json": JSON.stringify({
         redaction: {
-          patterns: {
-            custom: [{ name: "pat-b", regex: "bbb" }],
-          },
+          customPatterns: [{ name: "pat-b", regex: "bbb" }],
         },
       }),
     },
     async (dir) => {
       const config = await loadConfig(dir, ["a.json", "b.json"]);
-      const customNames = config.redaction.patterns.custom.map((p: any) => p.name);
+      const customNames = config.redaction.globalRules.customPatterns.map((p: any) => p.name);
       expect(customNames).toContain("pat-a");
       expect(customNames).toContain("pat-b");
     },
   );
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// redaction v2 integration
+// ═════════════════════════════════════════════════════════════════════════════
+
+test("resolved redaction config compiles and redacts correctly", async () => {
+  const { compileScopes, redactEvent, BUILTIN_SCOPES } = await import("@glubean/redaction");
+
+  await withTempDir(
+    {
+      "package.json": JSON.stringify({
+        glubean: {
+          redaction: {
+            sensitiveKeys: ["x-custom-secret"],
+          },
+        },
+      }),
+    },
+    async (dir) => {
+      const config = await loadConfig(dir);
+
+      // Compile scopes from resolved config
+      const compiled = compileScopes({
+        builtinScopes: BUILTIN_SCOPES,
+        globalRules: config.redaction.globalRules,
+        replacementFormat: config.redaction.replacementFormat,
+      });
+
+      // Trace event with sensitive data
+      const event = {
+        type: "trace",
+        data: {
+          requestHeaders: { authorization: "Bearer secret-token-12345" },
+          requestBody: { "x-custom-secret": "hidden", username: "alice" },
+        },
+      };
+
+      const redacted = redactEvent(event, compiled, config.redaction.replacementFormat);
+      const data = redacted.data as Record<string, unknown>;
+
+      // Built-in scope key (authorization in http.request.headers)
+      const headers = data.requestHeaders as Record<string, unknown>;
+      expect(headers.authorization).not.toBe("Bearer secret-token-12345");
+
+      // User-added global key (x-custom-secret in http.request.body)
+      const body = data.requestBody as Record<string, unknown>;
+      expect(body["x-custom-secret"]).not.toBe("hidden");
+      expect(body.username).toBe("alice");
+    },
+  );
+});
+
+test("resolved redaction config applies custom patterns", async () => {
+  const { compileScopes, redactEvent, BUILTIN_SCOPES } = await import("@glubean/redaction");
+
+  await withTempDir(
+    {
+      "config.json": JSON.stringify({
+        redaction: {
+          customPatterns: [{ name: "internal-id", regex: "INT-[A-Z0-9]{8}" }],
+        },
+      }),
+    },
+    async (dir) => {
+      const config = await loadConfig(dir, ["config.json"]);
+
+      const compiled = compileScopes({
+        builtinScopes: BUILTIN_SCOPES,
+        globalRules: config.redaction.globalRules,
+        replacementFormat: config.redaction.replacementFormat,
+      });
+
+      const event = {
+        type: "log",
+        message: "Processing INT-ABCD1234 for user",
+      };
+
+      const redacted = redactEvent(event, compiled, config.redaction.replacementFormat);
+      expect(redacted.message).not.toContain("INT-ABCD1234");
+    },
+  );
+});
+
+test("redactEvent passes through non-matching event types", async () => {
+  const { compileScopes, redactEvent, BUILTIN_SCOPES } = await import("@glubean/redaction");
+
+  const config = await loadConfig(process.cwd());
+  const compiled = compileScopes({
+    builtinScopes: BUILTIN_SCOPES,
+    globalRules: config.redaction.globalRules,
+    replacementFormat: config.redaction.replacementFormat,
+  });
+
+  const event = { type: "metric", name: "duration", value: 42 };
+  const result = redactEvent(event, compiled, config.redaction.replacementFormat);
+  expect(result).toBe(event); // same reference, no clone
+});
+
+test("redactEvent does not mutate original event", async () => {
+  const { compileScopes, redactEvent, BUILTIN_SCOPES } = await import("@glubean/redaction");
+
+  const config = await loadConfig(process.cwd());
+  const compiled = compileScopes({
+    builtinScopes: BUILTIN_SCOPES,
+    globalRules: config.redaction.globalRules,
+    replacementFormat: config.redaction.replacementFormat,
+  });
+
+  const event = {
+    type: "trace",
+    data: {
+      requestHeaders: { authorization: "Bearer secret" },
+    },
+  };
+
+  redactEvent(event, compiled, config.redaction.replacementFormat);
+  expect((event.data.requestHeaders as any).authorization).toBe("Bearer secret");
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
