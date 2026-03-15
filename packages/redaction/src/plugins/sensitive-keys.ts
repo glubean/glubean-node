@@ -3,19 +3,50 @@
  *
  * Checks if a JSON key or header name matches one of the configured
  * sensitive keys (case-insensitive substring match).
- *
- * @example
- * // "x-authorization-token" matches "authorization"
- * // "X-Api-Key" matches "api-key" (after lowercasing)
  */
 
-import type { RedactionPlugin, SensitiveKeysConfig } from "../types.js";
-import { BUILT_IN_SENSITIVE_KEYS } from "../defaults.js";
+import type { RedactionPlugin } from "../types.js";
+
+/** Config for the sensitive keys plugin. */
+export interface SensitiveKeysConfig {
+  /** Whether to include the built-in sensitive keys list. */
+  useBuiltIn: boolean;
+  /** Additional keys to treat as sensitive. */
+  additional: string[];
+  /** Keys to exclude from the built-in list. */
+  excluded: string[];
+}
+
+/**
+ * Built-in sensitive keys.
+ * v2: these are only used when `useBuiltIn: true` (for backwards compat).
+ * In the new model, sensitive keys live in scope declarations.
+ */
+const BUILT_IN_SENSITIVE_KEYS: readonly string[] = [
+  "password",
+  "passwd",
+  "secret",
+  "token",
+  "api_key",
+  "apikey",
+  "api-key",
+  "access_token",
+  "refresh_token",
+  "authorization",
+  "auth",
+  "credential",
+  "credentials",
+  "private_key",
+  "privatekey",
+  "private-key",
+  "ssh_key",
+  "client_secret",
+  "client-secret",
+  "bearer",
+];
 
 /**
  * Build the sensitive key set from config.
- * If useBuiltIn is true, starts with BUILT_IN_SENSITIVE_KEYS,
- * adds `additional`, removes `excluded`.
  */
 function buildKeySet(config: SensitiveKeysConfig): Set<string> {
   const keys = new Set<string>();
@@ -52,9 +83,7 @@ export function sensitiveKeysPlugin(
     name: "sensitive-keys",
     isKeySensitive: (key: string): boolean | undefined => {
       const lower = key.toLowerCase();
-      // Exact match first (fast path)
       if (keys.has(lower)) return true;
-      // Substring match
       for (const sensitive of keys) {
         if (lower.includes(sensitive)) return true;
       }

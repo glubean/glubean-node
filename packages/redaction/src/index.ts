@@ -1,49 +1,80 @@
 /**
  * @glubean/redaction — Plugin-based secrets/PII detection and masking.
  *
- * Pure TypeScript, no runtime-specific dependencies.
+ * v2: scope-based redaction with per-scope rules and handler dispatch.
  *
  * @example
  * import {
- *   RedactionEngine,
- *   createBuiltinPlugins,
- *   DEFAULT_CONFIG,
+ *   compileScopes,
  *   redactEvent,
+ *   BUILTIN_SCOPES,
+ *   DEFAULT_GLOBAL_RULES,
  * } from "@glubean/redaction";
  *
- * const engine = new RedactionEngine({
- *   config: DEFAULT_CONFIG,
- *   plugins: createBuiltinPlugins(DEFAULT_CONFIG),
+ * const compiled = compileScopes({
+ *   builtinScopes: BUILTIN_SCOPES,
+ *   globalRules: DEFAULT_GLOBAL_RULES,
+ *   replacementFormat: "partial",
  * });
  *
- * const result = engine.redact({ authorization: "Bearer secret123" });
- * // result.value === { authorization: "[REDACTED]" }
+ * const redacted = redactEvent(
+ *   { type: "trace", data: { requestHeaders: { authorization: "Bearer secret" } } },
+ *   compiled,
+ *   "partial",
+ * );
  */
 
 // Types
 export type {
+  CompiledScope,
   CustomPattern,
-  PatternsConfig,
+  GlobalRules,
+  HandlerContext,
   RedactionConfig,
   RedactionContext,
+  RedactionHandler,
   RedactionPlugin,
   RedactionResult,
-  RedactionScopes,
-  SensitiveKeysConfig,
+  RedactionScope,
+  RedactionScopeDeclaration,
+  ScopeContext,
+  ScopeRules,
 } from "./types.js";
 
 // Engine
 export { genericPartialMask, RedactionEngine } from "./engine.js";
 export type { RedactionEngineOptions } from "./engine.js";
 
+// Handlers
+export {
+  BUILTIN_HANDLERS,
+  headersHandler,
+  jsonHandler,
+  rawStringHandler,
+  urlQueryHandler,
+} from "./handlers.js";
+
+// Compiler
+export { compileScopes, createScopeEngine } from "./compiler.js";
+export type { CompilerOptions, ScopeOverride } from "./compiler.js";
+
+// Adapter
+export { redactEvent } from "./adapter.js";
+export type { RedactableEvent } from "./adapter.js";
+
 // Defaults
-export { BUILT_IN_SENSITIVE_KEYS, DEFAULT_CONFIG, PATTERN_SOURCES } from "./defaults.js";
+export {
+  BUILTIN_SCOPES,
+  DEFAULT_CONFIG,
+  DEFAULT_GLOBAL_RULES,
+  PATTERN_SOURCES,
+} from "./defaults.js";
 
 // Plugins
 export {
   awsKeysPlugin,
   bearerPlugin,
-  createBuiltinPlugins,
+  createPatternPlugins,
   creditCardPlugin,
   emailPlugin,
   githubTokensPlugin,
@@ -52,7 +83,3 @@ export {
   jwtPlugin,
   sensitiveKeysPlugin,
 } from "./plugins/mod.js";
-
-// Adapter
-export { redactEvent } from "./adapter.js";
-export type { RedactableEvent } from "./adapter.js";

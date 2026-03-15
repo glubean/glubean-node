@@ -1,622 +1,932 @@
-import { test, expect } from "vitest";
+/**
+ * Tests for @glubean/redaction v2.
+ *
+ * Covers: engine, handlers, compiler, adapter, and end-to-end flows.
+ */
+
+import { test, expect, describe } from "vitest";
+import { RedactionEngine, genericPartialMask } from "./engine.js";
+import { compileScopes } from "./compiler.js";
+import { redactEvent } from "./adapter.js";
 import {
-  createBuiltinPlugins,
-  DEFAULT_CONFIG,
-  genericPartialMask,
-  type RedactableEvent,
-  redactEvent,
-  type RedactionConfig,
-  RedactionEngine,
-} from "./index.js";
+  jsonHandler,
+  rawStringHandler,
+  urlQueryHandler,
+  headersHandler,
+} from "./handlers.js";
+import { sensitiveKeysPlugin } from "./plugins/sensitive-keys.js";
+import { jwtPlugin } from "./plugins/jwt.js";
+import { bearerPlugin } from "./plugins/bearer.js";
+import { emailPlugin } from "./plugins/email.js";
+import { ipAddressPlugin } from "./plugins/ip-address.js";
+import { creditCardPlugin } from "./plugins/credit-card.js";
+import { BUILTIN_SCOPES, DEFAULT_GLOBAL_RULES } from "./defaults.js";
+import type { RedactionScopeDeclaration } from "./types.js";
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Helper: create engine with default config
-// ═══════════════════════════════════════════════════════════════════════════
+// =============================================================================
+// Engine — core walker
+// =============================================================================
 
-function createEngine(overrides?: Partial<RedactionConfig>): RedactionEngine {
-  const config = { ...DEFAULT_CONFIG, ...overrides };
-  return new RedactionEngine({
-    config,
-    plugins: createBuiltinPlugins(config),
+describe("RedactionEngine", () => {
+  test("redacts sensitive keys", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["password"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = engine.redact({ password: "secret123", username: "alice" });
+    const val = result.value as Record<string, unknown>;
+    expect(val.password).toBe("[REDACTED]");
+    expect(val.username).toBe("alice");
+    expect(result.redacted).toBe(true);
   });
-}
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Sensitive key detection
-// ═══════════════════════════════════════════════════════════════════════════
+  test("substring key matching", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["token"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
 
-test("sensitive-keys: exact match redacts value", () => {
-  const engine = createEngine();
-  const result = engine.redact({ password: "my-secret-pass" });
-  expect(
-    (result.value as Record<string, unknown>).password,
-  ).toBe("my-***ass");
-  expect(result.redacted).toBe(true);
-});
-
-test("sensitive-keys: substring match redacts value", () => {
-  const engine = createEngine();
-  const result = engine.redact({
-    "x-authorization-token": "Bearer abc123",
+    const result = engine.redact({ "x-auth-token": "abc", "access_token": "def" });
+    const val = result.value as Record<string, unknown>;
+    expect(val["x-auth-token"]).toBe("[REDACTED]");
+    expect(val["access_token"]).toBe("[REDACTED]");
   });
-  expect(
-    (result.value as Record<string, unknown>)["x-authorization-token"],
-  ).toBe("Bea***123");
+
+  test("partial replacement format", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["secret"], excluded: [] }),
+      ],
+      replacementFormat: "partial",
+    });
+
+    const result = engine.redact({ secret: "my-long-secret-value" });
+    const val = result.value as Record<string, unknown>;
+    expect(val.secret).not.toBe("my-long-secret-value");
+    expect(val.secret).toContain("***");
+  });
+
+  test("labeled replacement format", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["key"], excluded: [] }),
+      ],
+      replacementFormat: "labeled",
+    });
+
+    const result = engine.redact({ key: "value" });
+    const val = result.value as Record<string, unknown>;
+    expect(val.key).toBe("[REDACTED]");
+  });
+
+  test("recursively walks nested objects", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["password"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = engine.redact({
+      user: { profile: { password: "secret" }, name: "alice" },
+    });
+    const val = result.value as any;
+    expect(val.user.profile.password).toBe("[REDACTED]");
+    expect(val.user.name).toBe("alice");
+  });
+
+  test("recursively walks arrays", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["token"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = engine.redact([{ token: "a" }, { token: "b" }, { name: "c" }]);
+    const val = result.value as any[];
+    expect(val[0].token).toBe("[REDACTED]");
+    expect(val[1].token).toBe("[REDACTED]");
+    expect(val[2].name).toBe("c");
+  });
+
+  test("applies value-level pattern plugins", () => {
+    const engine = new RedactionEngine({
+      plugins: [emailPlugin],
+      replacementFormat: "partial",
+    });
+
+    const result = engine.redact({ message: "Contact user@example.com for help" });
+    const val = result.value as Record<string, unknown>;
+    expect(val.message).not.toContain("user@example.com");
+    expect(result.redacted).toBe(true);
+  });
+
+  test("JWT pattern detection", () => {
+    const engine = new RedactionEngine({
+      plugins: [jwtPlugin],
+      replacementFormat: "simple",
+    });
+
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U";
+    const result = engine.redact({ data: jwt });
+    const val = result.value as Record<string, unknown>;
+    expect(val.data).toBe("[REDACTED]");
+  });
+
+  test("bearer pattern detection", () => {
+    const engine = new RedactionEngine({
+      plugins: [bearerPlugin],
+      replacementFormat: "simple",
+    });
+
+    const result = engine.redact({ header: "Bearer my-secret-token-123" });
+    const val = result.value as Record<string, unknown>;
+    expect(val.header).toBe("[REDACTED]");
+  });
+
+  test("depth guard prevents infinite recursion", () => {
+    const engine = new RedactionEngine({
+      plugins: [],
+      replacementFormat: "simple",
+      maxDepth: 2,
+    });
+
+    const deep = { a: { b: { c: { d: "value" } } } };
+    const result = engine.redact(deep);
+    const val = result.value as any;
+    expect(val.a.b.c).toBe("[REDACTED: too deep]");
+  });
+
+  test("null and undefined pass through", () => {
+    const engine = new RedactionEngine({ plugins: [], replacementFormat: "simple" });
+    expect(engine.redact(null).value).toBe(null);
+    expect(engine.redact(undefined).value).toBe(undefined);
+  });
+
+  test("numbers and booleans pass through", () => {
+    const engine = new RedactionEngine({ plugins: [], replacementFormat: "simple" });
+    const result = engine.redact({ count: 42, active: true });
+    const val = result.value as Record<string, unknown>;
+    expect(val.count).toBe(42);
+    expect(val.active).toBe(true);
+    expect(result.redacted).toBe(false);
+  });
+
+  test("records details with path and plugin name", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["secret"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = engine.redact({ user: { secret: "abc" } });
+    expect(result.details.length).toBe(1);
+    expect(result.details[0].path).toBe("user.secret");
+    expect(result.details[0].plugin).toBe("sensitive-keys");
+    expect(result.details[0].original).toBe("abc");
+  });
 });
 
-test("sensitive-keys: case insensitive", () => {
-  const engine = createEngine();
-  const result = engine.redact({ Authorization: "Bearer abc123" });
-  expect(
-    (result.value as Record<string, unknown>).Authorization,
-  ).toBe("Bea***123");
+// =============================================================================
+// genericPartialMask
+// =============================================================================
+
+describe("genericPartialMask", () => {
+  test("short values get full mask", () => {
+    expect(genericPartialMask("ab")).toBe("****");
+    expect(genericPartialMask("abcd")).toBe("****");
+  });
+
+  test("medium values show first 2 and last 1", () => {
+    expect(genericPartialMask("abcde")).toBe("ab***e");
+    expect(genericPartialMask("abcdefgh")).toBe("ab***h");
+  });
+
+  test("long values show first 3 and last 3", () => {
+    expect(genericPartialMask("abcdefghijk")).toBe("abc***ijk");
+  });
 });
 
-test("sensitive-keys: non-sensitive key passes through", () => {
-  const engine = createEngine();
-  const result = engine.redact({ username: "john" });
-  expect((result.value as Record<string, unknown>).username).toBe("john");
-  expect(result.redacted).toBe(false);
+// =============================================================================
+// Handlers
+// =============================================================================
+
+describe("jsonHandler", () => {
+  test("delegates to engine.redact", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["secret"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = jsonHandler.process(
+      { secret: "abc", name: "test" },
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    const val = result.value as Record<string, unknown>;
+    expect(val.secret).toBe("[REDACTED]");
+    expect(val.name).toBe("test");
+  });
 });
 
-test("sensitive-keys: additional keys from config", () => {
-  const config: RedactionConfig = {
-    ...DEFAULT_CONFIG,
-    sensitiveKeys: {
-      ...DEFAULT_CONFIG.sensitiveKeys,
-      additional: ["x-custom-secret"],
-    },
+describe("rawStringHandler", () => {
+  test("applies pattern matching to raw strings", () => {
+    const engine = new RedactionEngine({
+      plugins: [emailPlugin],
+      replacementFormat: "simple",
+    });
+
+    const result = rawStringHandler.process(
+      "Contact user@example.com",
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    expect(result.value).not.toContain("user@example.com");
+    expect(result.redacted).toBe(true);
+  });
+
+  test("passes through non-strings", () => {
+    const engine = new RedactionEngine({ plugins: [], replacementFormat: "simple" });
+    const result = rawStringHandler.process(
+      42,
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    expect(result.value).toBe(42);
+    expect(result.redacted).toBe(false);
+  });
+});
+
+describe("urlQueryHandler", () => {
+  test("redacts sensitive query parameters", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["token", "api_key"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = urlQueryHandler.process(
+      "https://api.example.com/data?token=secret123&page=1&api_key=mykey",
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+
+    const url = new URL(result.value as string);
+    expect(url.searchParams.get("token")).toBe("[REDACTED]");
+    expect(url.searchParams.get("api_key")).toBe("[REDACTED]");
+    expect(url.searchParams.get("page")).toBe("1");
+    expect(result.redacted).toBe(true);
+  });
+
+  test("passes through URLs without query params", () => {
+    const engine = new RedactionEngine({ plugins: [], replacementFormat: "simple" });
+    const result = urlQueryHandler.process(
+      "https://api.example.com/data",
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    expect(result.value).toBe("https://api.example.com/data");
+    expect(result.redacted).toBe(false);
+  });
+
+  test("falls back to engine for non-URL strings", () => {
+    const engine = new RedactionEngine({
+      plugins: [emailPlugin],
+      replacementFormat: "simple",
+    });
+    const result = urlQueryHandler.process(
+      "not a url user@example.com",
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    expect(result.redacted).toBe(true);
+  });
+
+  test("passes through non-strings", () => {
+    const engine = new RedactionEngine({ plugins: [], replacementFormat: "simple" });
+    const result = urlQueryHandler.process(
+      42,
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    expect(result.value).toBe(42);
+    expect(result.redacted).toBe(false);
+  });
+});
+
+describe("headersHandler", () => {
+  test("redacts sensitive header values", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["authorization"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = headersHandler.process(
+      { authorization: "Bearer secret", "content-type": "application/json" },
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    const val = result.value as Record<string, unknown>;
+    expect(val.authorization).toBe("[REDACTED]");
+    expect(val["content-type"]).toBe("application/json");
+  });
+
+  test("parses and redacts cookie header", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["session"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = headersHandler.process(
+      { cookie: "session=abc123; theme=dark; session_id=xyz" },
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    const val = result.value as Record<string, unknown>;
+    const cookie = val.cookie as string;
+    expect(cookie).toContain("theme=dark");
+    expect(cookie).not.toContain("abc123");
+    expect(cookie).not.toContain("xyz");
+  });
+
+  test("parses and redacts set-cookie header preserving attributes", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["session"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = headersHandler.process(
+      { "set-cookie": "session=secret-value; Path=/; HttpOnly; Secure" },
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    const val = result.value as Record<string, unknown>;
+    const setCookie = val["set-cookie"] as string;
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).toContain("Secure");
+    expect(setCookie).not.toContain("secret-value");
+  });
+
+  test("passes through non-objects", () => {
+    const engine = new RedactionEngine({ plugins: [], replacementFormat: "simple" });
+    const result = headersHandler.process(
+      "not-an-object",
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+    expect(result.value).toBe("not-an-object");
+    expect(result.redacted).toBe(false);
+  });
+});
+
+// =============================================================================
+// Compiler
+// =============================================================================
+
+describe("compileScopes", () => {
+  const minimalScope: RedactionScopeDeclaration = {
+    id: "test.scope",
+    name: "Test scope",
+    event: "trace",
+    target: "data.field",
+    handler: "json",
+    rules: { sensitiveKeys: ["secret"] },
   };
-  const engine = new RedactionEngine({
-    config,
-    plugins: createBuiltinPlugins(config),
+
+  test("compiles a minimal scope declaration", () => {
+    const compiled = compileScopes({
+      builtinScopes: [minimalScope],
+      globalRules: { sensitiveKeys: [], patterns: [], customPatterns: [] },
+      replacementFormat: "simple",
+    });
+
+    expect(compiled.length).toBe(1);
+    expect(compiled[0].id).toBe("test.scope");
+    expect(compiled[0].event).toBe("trace");
+    expect(compiled[0].enabled).toBe(true);
+    expect(compiled[0].handler.name).toBe("json");
   });
-  const result = engine.redact({ "x-custom-secret": "value" });
-  expect(
-    (result.value as Record<string, unknown>)["x-custom-secret"],
-  ).toBe("va***e");
-});
 
-test("sensitive-keys: excluded keys are not redacted", () => {
-  const config: RedactionConfig = {
-    ...DEFAULT_CONFIG,
-    sensitiveKeys: {
-      useBuiltIn: true,
-      additional: [],
-      excluded: ["auth"],
-    },
-  };
-  const engine = new RedactionEngine({
-    config,
-    plugins: createBuiltinPlugins(config),
+  test("applies user override to disable scope", () => {
+    const compiled = compileScopes({
+      builtinScopes: [minimalScope],
+      globalRules: { sensitiveKeys: [], patterns: [], customPatterns: [] },
+      replacementFormat: "simple",
+      userOverrides: { "test.scope": { enabled: false } },
+    });
+
+    expect(compiled[0].enabled).toBe(false);
   });
-  const result = engine.redact({ auth: "some-value" });
-  expect((result.value as Record<string, unknown>).auth).toBe("some-value");
-});
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Pattern plugins — simple format
-// ═══════════════════════════════════════════════════════════════════════════
-
-test("jwt: detects JWT token in string", () => {
-  const engine = createEngine();
-  const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123signature";
-  const result = engine.redact(jwt);
-  expect(result.value).toBe("eyJ***ure");
-  expect(result.redacted).toBe(true);
-});
-
-test("jwt: detects JWT embedded in a string", () => {
-  const engine = createEngine();
-  const text = "Token is eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123sig here";
-  const result = engine.redact(text);
-  expect(result.value).toBe("Token is eyJ***sig here");
-});
-
-test("bearer: detects Bearer token", () => {
-  const engine = createEngine();
-  const result = engine.redact("Bearer eyJhbGciOiJIUzI1NiJ9.token.sig");
-  expect(result.redacted).toBe(true);
-  expect(result.value).not.toBe("Bearer eyJhbGciOiJIUzI1NiJ9.token.sig");
-});
-
-test("awsKeys: detects AWS access key", () => {
-  const engine = createEngine();
-  const result = engine.redact("Key is AKIAIOSFODNN7EXAMPLE");
-  expect(result.value).toBe("Key is AKIA***LE");
-});
-
-test("githubTokens: detects GitHub PAT", () => {
-  const engine = createEngine();
-  const ghp = "ghp_" + "a".repeat(40);
-  const result = engine.redact(`Token: ${ghp}`);
-  expect(result.value).toBe("Token: ghp_***aaa");
-});
-
-test("email: detects email address", () => {
-  const engine = createEngine();
-  const result = engine.redact("Contact: user@example.com");
-  expect(result.value).toBe("Contact: u***@***.com");
-});
-
-test("ipAddress: detects IPv4 address", () => {
-  const engine = createEngine();
-  const result = engine.redact("Server: 192.168.1.100");
-  expect(result.value).toBe("Server: 192.168.*.*");
-});
-
-test("creditCard: detects card number", () => {
-  const engine = createEngine();
-  const result = engine.redact("Card: 4111-1111-1111-1111");
-  expect(result.value).toBe("Card: ****-****-****-1111");
-});
-
-test("creditCard: detects card number without separators", () => {
-  const engine = createEngine();
-  const result = engine.redact("Card: 4111111111111111");
-  expect(result.value).toBe("Card: ****-****-****-1111");
-});
-
-test("hexKeys: detects long hex string", () => {
-  const engine = createEngine();
-  const hex = "a".repeat(32);
-  const result = engine.redact(`Key: ${hex}`);
-  expect(result.value).toBe("Key: aaa***aaa");
-});
-
-test("hexKeys: ignores short hex string", () => {
-  const engine = createEngine();
-  const result = engine.redact("ID: abcdef0123456789");
-  expect(result.value).toBe("ID: abcdef0123456789");
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Replacement formats
-// ═══════════════════════════════════════════════════════════════════════════
-
-test("labeled format: includes plugin name", () => {
-  const engine = createEngine({ replacementFormat: "labeled" });
-  const result = engine.redact("Contact: user@example.com");
-  expect(result.value).toBe("Contact: [REDACTED:email]");
-});
-
-test("labeled format: sensitive key shows [REDACTED]", () => {
-  const engine = createEngine({ replacementFormat: "labeled" });
-  const result = engine.redact({ password: "secret" });
-  expect(
-    (result.value as Record<string, unknown>).password,
-  ).toBe("[REDACTED]");
-});
-
-test("partial format: email uses smart mask", () => {
-  const engine = createEngine({ replacementFormat: "partial" });
-  const result = engine.redact("user@example.com");
-  expect(result.value).toBe("u***@***.com");
-});
-
-test("partial format: IP uses first two octets", () => {
-  const engine = createEngine({ replacementFormat: "partial" });
-  const result = engine.redact("192.168.1.100");
-  expect(result.value).toBe("192.168.*.*");
-});
-
-test("partial format: credit card shows last 4", () => {
-  const engine = createEngine({ replacementFormat: "partial" });
-  const result = engine.redact("4111-1111-1111-1234");
-  expect(result.value).toBe("****-****-****-1234");
-});
-
-test("partial format: JWT shows first 3 + last 3", () => {
-  const engine = createEngine({ replacementFormat: "partial" });
-  const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcdefgh";
-  const result = engine.redact(jwt);
-  expect(result.value).toBe("eyJ***fgh");
-});
-
-test("partial format: AWS key shows first 4 + last 2", () => {
-  const engine = createEngine({ replacementFormat: "partial" });
-  const result = engine.redact("AKIAIOSFODNN7EXAMPLE");
-  expect(result.value).toBe("AKIA***LE");
-});
-
-test("partial format: sensitive key value uses generic mask", () => {
-  const engine = createEngine({ replacementFormat: "partial" });
-  const result = engine.redact({ password: "mysecretpassword" });
-  expect((result.value as Record<string, unknown>).password).toBe("mys***ord");
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Recursive object/array walking
-// ═══════════════════════════════════════════════════════════════════════════
-
-test("recursive: nested object", () => {
-  const engine = createEngine();
-  const result = engine.redact({
-    user: {
-      name: "John",
-      settings: {
-        password: "secret123",
+  test("merges user override rules with scope rules", () => {
+    const compiled = compileScopes({
+      builtinScopes: [minimalScope],
+      globalRules: { sensitiveKeys: [], patterns: [], customPatterns: [] },
+      replacementFormat: "simple",
+      userOverrides: {
+        "test.scope": { rules: { sensitiveKeys: ["extra-key"] } },
       },
-    },
+    });
+
+    const engine = new RedactionEngine({
+      plugins: compiled[0].plugins,
+      replacementFormat: "simple",
+    });
+
+    const r1 = engine.redact({ secret: "a", "extra-key": "b", normal: "c" });
+    const val = r1.value as Record<string, unknown>;
+    expect(val.secret).toBe("[REDACTED]");
+    expect(val["extra-key"]).toBe("[REDACTED]");
+    expect(val.normal).toBe("c");
   });
-  const value = result.value as any;
-  expect(value.user.name).toBe("John");
-  expect(value.user.settings.password).toBe("sec***123");
-});
 
-test("recursive: array of objects", () => {
-  const engine = createEngine();
-  const result = engine.redact([
-    { api_key: "key1" },
-    { username: "john" },
-    { token: "tok123" },
-  ]);
-  const value = result.value as Array<Record<string, unknown>>;
-  expect(value[0].api_key).toBe("****");
-  expect(value[1].username).toBe("john");
-  expect(value[2].token).toBe("to***3");
-});
+  test("merges global rules with scope rules", () => {
+    const compiled = compileScopes({
+      builtinScopes: [minimalScope],
+      globalRules: { sensitiveKeys: ["global-secret"], patterns: [], customPatterns: [] },
+      replacementFormat: "simple",
+    });
 
-test("recursive: array of strings with patterns", () => {
-  const engine = createEngine();
-  const result = engine.redact(["user@example.com", "hello", "192.168.1.1"]);
-  const value = result.value as string[];
-  expect(value[0]).toBe("u***@***.com");
-  expect(value[1]).toBe("hello");
-  expect(value[2]).toBe("192.168.*.*");
-});
+    const engine = new RedactionEngine({
+      plugins: compiled[0].plugins,
+      replacementFormat: "simple",
+    });
 
-test("recursive: depth guard triggers at max depth", () => {
-  const engine = new RedactionEngine({
-    config: DEFAULT_CONFIG,
-    plugins: createBuiltinPlugins(DEFAULT_CONFIG),
-    maxDepth: 2,
+    const result = engine.redact({ "global-secret": "a", secret: "b" });
+    const val = result.value as Record<string, unknown>;
+    expect(val["global-secret"]).toBe("[REDACTED]");
+    expect(val.secret).toBe("[REDACTED]");
   });
-  const result = engine.redact({
-    a: { b: { c: { password: "secret" } } },
+
+  test("includes plugin scopes", () => {
+    const pluginScope: RedactionScopeDeclaration = {
+      id: "grpc.metadata",
+      name: "gRPC metadata",
+      event: "trace",
+      target: "data.metadata",
+      handler: "headers",
+      rules: { sensitiveKeys: ["authorization"] },
+    };
+
+    const compiled = compileScopes({
+      builtinScopes: [minimalScope],
+      pluginScopes: [pluginScope],
+      globalRules: { sensitiveKeys: [], patterns: [], customPatterns: [] },
+      replacementFormat: "simple",
+    });
+
+    expect(compiled.length).toBe(2);
+    expect(compiled[1].id).toBe("grpc.metadata");
+    expect(compiled[1].handler.name).toBe("headers");
   });
-  const value = result.value as Record<
-    string,
-    Record<string, Record<string, unknown>>
-  >;
-  expect(value.a.b.c).toBe("[REDACTED: too deep]");
-});
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Edge cases
-// ═══════════════════════════════════════════════════════════════════════════
-
-test("edge: null value passes through", () => {
-  const engine = createEngine();
-  const result = engine.redact(null);
-  expect(result.value).toBeNull();
-  expect(result.redacted).toBe(false);
-});
-
-test("edge: undefined value passes through", () => {
-  const engine = createEngine();
-  const result = engine.redact(undefined);
-  expect(result.value).toBeUndefined();
-  expect(result.redacted).toBe(false);
-});
-
-test("edge: number passes through", () => {
-  const engine = createEngine();
-  const result = engine.redact(42);
-  expect(result.value).toBe(42);
-  expect(result.redacted).toBe(false);
-});
-
-test("edge: boolean passes through", () => {
-  const engine = createEngine();
-  const result = engine.redact(true);
-  expect(result.value).toBe(true);
-  expect(result.redacted).toBe(false);
-});
-
-test("edge: empty object passes through", () => {
-  const engine = createEngine();
-  const result = engine.redact({});
-  expect(result.value).toEqual({});
-  expect(result.redacted).toBe(false);
-});
-
-test("edge: empty array passes through", () => {
-  const engine = createEngine();
-  const result = engine.redact([]);
-  expect(result.value).toEqual([]);
-  expect(result.redacted).toBe(false);
-});
-
-test("edge: empty string passes through", () => {
-  const engine = createEngine();
-  const result = engine.redact("");
-  expect(result.value).toBe("");
-  expect(result.redacted).toBe(false);
-});
-
-test("edge: non-matching string passes through", () => {
-  const engine = createEngine();
-  const result = engine.redact("just a normal message");
-  expect(result.value).toBe("just a normal message");
-  expect(result.redacted).toBe(false);
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Scope gating
-// ═══════════════════════════════════════════════════════════════════════════
-
-test("scope: disabled scope skips redaction", () => {
-  const config: RedactionConfig = {
-    ...DEFAULT_CONFIG,
-    scopes: {
-      ...DEFAULT_CONFIG.scopes,
-      consoleOutput: false,
-    },
-  };
-  const engine = new RedactionEngine({
-    config,
-    plugins: createBuiltinPlugins(config),
+  test("throws on unknown handler", () => {
+    expect(() =>
+      compileScopes({
+        builtinScopes: [{ ...minimalScope, handler: "nonexistent" }],
+        globalRules: { sensitiveKeys: [], patterns: [], customPatterns: [] },
+        replacementFormat: "simple",
+      }),
+    ).toThrow('unknown handler "nonexistent"');
   });
-  const result = engine.redact("user@example.com", "consoleOutput");
-  expect(result.value).toBe("user@example.com");
-  expect(result.redacted).toBe(false);
+
+  test("includes global pattern plugins", () => {
+    const compiled = compileScopes({
+      builtinScopes: [minimalScope],
+      globalRules: { sensitiveKeys: [], patterns: ["email"], customPatterns: [] },
+      replacementFormat: "simple",
+    });
+
+    const engine = new RedactionEngine({
+      plugins: compiled[0].plugins,
+      replacementFormat: "simple",
+    });
+
+    const result = engine.redact({ note: "Contact user@example.com" });
+    const val = result.value as Record<string, unknown>;
+    expect(val.note).not.toContain("user@example.com");
+  });
+
+  test("field path accessor works", () => {
+    const compiled = compileScopes({
+      builtinScopes: [{
+        ...minimalScope,
+        target: "data.nested.field",
+      }],
+      globalRules: { sensitiveKeys: [], patterns: [], customPatterns: [] },
+      replacementFormat: "simple",
+    });
+
+    const event = { type: "trace", data: { nested: { field: { secret: "abc" } } } };
+    const val = compiled[0].get(event);
+    expect(val).toEqual({ secret: "abc" });
+
+    compiled[0].set(event, { secret: "[REDACTED]" });
+    expect((event.data.nested as any).field).toEqual({ secret: "[REDACTED]" });
+  });
 });
 
-test("scope: enabled scope applies redaction", () => {
-  const engine = createEngine();
-  const result = engine.redact("user@example.com", "consoleOutput");
-  expect(result.value).toBe("u***@***.com");
-  expect(result.redacted).toBe(true);
-});
+// =============================================================================
+// Adapter — redactEvent
+// =============================================================================
 
-test("scope: no scope specified always redacts", () => {
-  const engine = createEngine();
-  const result = engine.redact("user@example.com");
-  expect(result.value).toBe("u***@***.com");
-});
+describe("redactEvent", () => {
+  function compileDefaults() {
+    return compileScopes({
+      builtinScopes: BUILTIN_SCOPES,
+      globalRules: DEFAULT_GLOBAL_RULES,
+      replacementFormat: "partial",
+    });
+  }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Adapter: redactEvent
-// ═══════════════════════════════════════════════════════════════════════════
-
-test("adapter: trace event redacts headers and bodies", () => {
-  const engine = createEngine();
-  const event: RedactableEvent = {
-    type: "trace",
-    data: {
-      method: "POST",
-      url: "https://api.example.com/users",
-      status: 200,
-      duration: 150,
-      requestHeaders: {
-        authorization: "Bearer secret-token-123",
-        "content-type": "application/json",
+  test("redacts trace requestHeaders", () => {
+    const scopes = compileDefaults();
+    const event = {
+      type: "trace",
+      data: {
+        requestHeaders: { authorization: "Bearer secret-token-12345" },
       },
-      requestBody: { password: "mysecret", username: "john" },
-      responseHeaders: { "x-request-id": "abc123" },
-      responseBody: { token: "new-access-token" },
-    },
-  };
-  const redacted = redactEvent(engine, event);
-  const data = (redacted as Record<string, unknown>).data as Record<string, unknown>;
+    };
 
-  const reqHeaders = data.requestHeaders as Record<string, unknown>;
-  expect(reqHeaders.authorization).toBe("Bea***123");
-  expect(reqHeaders["content-type"]).toBe("application/json");
-
-  const reqBody = data.requestBody as Record<string, unknown>;
-  expect(reqBody.password).toBe("my***t");
-  expect(reqBody.username).toBe("john");
-
-  const resBody = data.responseBody as Record<string, unknown>;
-  expect(resBody.token).toBe("new***ken");
-});
-
-test("adapter: log event redacts message and data", () => {
-  const engine = createEngine();
-  const event: RedactableEvent = {
-    type: "log",
-    message: "User email: user@example.com",
-    data: { password: "secret" },
-  };
-  const redacted = redactEvent(engine, event);
-  expect(redacted.message).toBe("User email: u***@***.com");
-  expect(
-    (redacted.data as Record<string, unknown>).password,
-  ).toBe("se***t");
-});
-
-test("adapter: assertion event redacts message, actual, expected", () => {
-  const engine = createEngine();
-  const event: RedactableEvent = {
-    type: "assertion",
-    passed: false,
-    message: "Expected token to match",
-    actual: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature",
-    expected: "some-value",
-  };
-  const redacted = redactEvent(engine, event);
-  expect(redacted.passed).toBe(false);
-  expect(redacted.actual).not.toBe(
-    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature",
-  );
-});
-
-test("adapter: error event redacts message", () => {
-  const engine = createEngine();
-  const event: RedactableEvent = {
-    type: "error",
-    message: "Failed with key AKIAIOSFODNN7EXAMPLE",
-  };
-  const redacted = redactEvent(engine, event);
-  expect(redacted.message).toBe("Failed with key AKIA***LE");
-});
-
-test("adapter: status event redacts error and stack", () => {
-  const engine = createEngine();
-  const event: RedactableEvent = {
-    type: "status",
-    status: "failed",
-    error: "Auth failed with token Bearer abc.def.ghi",
-  };
-  const redacted = redactEvent(engine, event);
-  expect(redacted.error).not.toBe("Auth failed with token Bearer abc.def.ghi");
-});
-
-test("adapter: metric event passes through unchanged", () => {
-  const engine = createEngine();
-  const event: RedactableEvent = {
-    type: "metric",
-    name: "response_time",
-    value: 150,
-    unit: "ms",
-  };
-  const redacted = redactEvent(engine, event);
-  expect(redacted).toBe(event);
-});
-
-test("adapter: summary event passes through unchanged", () => {
-  const engine = createEngine();
-  const event: RedactableEvent = {
-    type: "summary",
-    data: {
-      httpRequestTotal: 3,
-      assertionFailed: 0,
-    },
-  };
-  const redacted = redactEvent(engine, event);
-  expect(redacted).toBe(event);
-});
-
-test("adapter: start event passes through unchanged", () => {
-  const engine = createEngine();
-  const event: RedactableEvent = {
-    type: "start",
-    id: "test-1",
-    name: "My Test",
-  };
-  const redacted = redactEvent(engine, event);
-  expect(redacted).toBe(event);
-});
-
-test("adapter: does not mutate original event", () => {
-  const engine = createEngine();
-  const original: RedactableEvent = {
-    type: "log",
-    message: "Email: user@example.com",
-  };
-  const messageBefore = original.message;
-  redactEvent(engine, original);
-  expect(original.message).toBe(messageBefore);
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Adapter: scope gating in trace events
-// ═══════════════════════════════════════════════════════════════════════════
-
-test("adapter: disabled requestHeaders scope skips header redaction", () => {
-  const config: RedactionConfig = {
-    ...DEFAULT_CONFIG,
-    scopes: {
-      ...DEFAULT_CONFIG.scopes,
-      requestHeaders: false,
-    },
-  };
-  const engine = new RedactionEngine({
-    config,
-    plugins: createBuiltinPlugins(config),
+    const result = redactEvent(event, scopes, "simple");
+    const data = result.data as Record<string, unknown>;
+    const headers = data.requestHeaders as Record<string, unknown>;
+    expect(headers.authorization).toBe("[REDACTED]");
   });
-  const event: RedactableEvent = {
-    type: "trace",
-    data: {
-      method: "GET",
-      url: "https://api.example.com",
-      status: 200,
-      duration: 50,
-      requestHeaders: { authorization: "Bearer secret" },
-      responseBody: { token: "abc" },
-    },
-  };
-  const redacted = redactEvent(engine, event);
-  const data = (redacted as Record<string, unknown>).data as Record<string, unknown>;
-  const reqHeaders = data.requestHeaders as Record<string, unknown>;
-  expect(reqHeaders.authorization).toBe("Bearer secret");
-  const resBody = data.responseBody as Record<string, unknown>;
-  expect(resBody.token).toBe("****");
-});
 
-// ═══════════════════════════════════════════════════════════════════════════
-// genericPartialMask utility
-// ═══════════════════════════════════════════════════════════════════════════
+  test("redacts trace URL query params", () => {
+    const scopes = compileDefaults();
+    const event = {
+      type: "trace",
+      data: {
+        url: "https://api.example.com/data?token=secret&page=1",
+      },
+    };
 
-test("genericPartialMask: short string (<=4)", () => {
-  expect(genericPartialMask("abc")).toBe("****");
-  expect(genericPartialMask("abcd")).toBe("****");
-});
-
-test("genericPartialMask: medium string (5-8)", () => {
-  expect(genericPartialMask("abcde")).toBe("ab***e");
-  expect(genericPartialMask("abcdefgh")).toBe("ab***h");
-});
-
-test("genericPartialMask: long string (>8)", () => {
-  expect(genericPartialMask("abcdefghi")).toBe("abc***ghi");
-  expect(genericPartialMask("a]very-long-string")).toBe("a]v***ing");
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Custom patterns
-// ═══════════════════════════════════════════════════════════════════════════
-
-test("custom pattern: detects user-defined regex", () => {
-  const config: RedactionConfig = {
-    ...DEFAULT_CONFIG,
-    patterns: {
-      ...DEFAULT_CONFIG.patterns,
-      custom: [{ name: "internal-token", regex: "nbai_[a-zA-Z0-9]{16}" }],
-    },
-  };
-  const engine = new RedactionEngine({
-    config,
-    plugins: createBuiltinPlugins(config),
+    const result = redactEvent(event, scopes, "simple");
+    const data = result.data as Record<string, unknown>;
+    const url = new URL(data.url as string);
+    expect(url.searchParams.get("token")).toBe("[REDACTED]");
+    expect(url.searchParams.get("page")).toBe("1");
   });
-  const result = engine.redact("Key: nbai_abcdef0123456789");
-  expect(result.value).toBe("Key: nba***789");
+
+  test("redacts trace requestBody sensitive keys", () => {
+    const scopes = compileDefaults();
+    const event = {
+      type: "trace",
+      data: {
+        requestBody: { password: "secret123", username: "alice" },
+      },
+    };
+
+    const result = redactEvent(event, scopes, "simple");
+    const data = result.data as Record<string, unknown>;
+    const body = data.requestBody as Record<string, unknown>;
+    expect(body.password).toBe("[REDACTED]");
+    expect(body.username).toBe("alice");
+  });
+
+  test("redacts trace responseHeaders set-cookie", () => {
+    // Use a scope with "session" as a sensitive key
+    const scopes = compileScopes({
+      builtinScopes: [{
+        id: "http.response.headers",
+        name: "HTTP response headers",
+        event: "trace",
+        target: "data.responseHeaders",
+        handler: "headers",
+        rules: { sensitiveKeys: ["set-cookie", "session"] },
+      }],
+      globalRules: DEFAULT_GLOBAL_RULES,
+      replacementFormat: "simple",
+    });
+
+    const event = {
+      type: "trace",
+      data: {
+        responseHeaders: {
+          "set-cookie": "session=secret-value; Path=/; HttpOnly",
+          "content-type": "text/html",
+        },
+      },
+    };
+
+    const result = redactEvent(event, scopes, "simple");
+    const data = result.data as Record<string, unknown>;
+    const headers = data.responseHeaders as Record<string, unknown>;
+    expect(headers["content-type"]).toBe("text/html");
+    const setCookie = headers["set-cookie"] as string;
+    expect(setCookie).toContain("Path=/");
+    expect(setCookie).toContain("HttpOnly");
+    expect(setCookie).not.toContain("secret-value");
+  });
+
+  test("redacts log message patterns", () => {
+    const scopes = compileDefaults();
+    const event = {
+      type: "log",
+      message: "User email is user@example.com",
+    };
+
+    const result = redactEvent(event, scopes, "simple");
+    expect(result.message).not.toContain("user@example.com");
+  });
+
+  test("redacts error message patterns", () => {
+    const scopes = compileDefaults();
+    const event = {
+      type: "error",
+      message: "Failed for user@example.com",
+    };
+
+    const result = redactEvent(event, scopes, "simple");
+    expect(result.message).not.toContain("user@example.com");
+  });
+
+  test("does not mutate original event", () => {
+    const scopes = compileDefaults();
+    const event = {
+      type: "trace",
+      data: {
+        requestHeaders: { authorization: "Bearer secret" },
+      },
+    };
+
+    redactEvent(event, scopes, "simple");
+    expect((event.data.requestHeaders as any).authorization).toBe("Bearer secret");
+  });
+
+  test("passes through unmatched event types", () => {
+    const scopes = compileDefaults();
+    const event = { type: "metric", name: "duration", value: 100 };
+    const result = redactEvent(event, scopes, "simple");
+    expect(result).toBe(event);
+  });
+
+  test("disabled scope skips redaction", () => {
+    const scopes = compileScopes({
+      builtinScopes: BUILTIN_SCOPES,
+      globalRules: DEFAULT_GLOBAL_RULES,
+      replacementFormat: "simple",
+      userOverrides: { "http.request.headers": { enabled: false } },
+    });
+
+    const event = {
+      type: "trace",
+      data: {
+        requestHeaders: { authorization: "Bearer secret" },
+      },
+    };
+
+    const result = redactEvent(event, scopes, "simple");
+    const data = result.data as Record<string, unknown>;
+    const headers = data.requestHeaders as Record<string, unknown>;
+    expect(headers.authorization).toBe("Bearer secret");
+  });
 });
 
-test("custom pattern: invalid regex is skipped", () => {
-  const config: RedactionConfig = {
-    ...DEFAULT_CONFIG,
-    patterns: {
-      ...DEFAULT_CONFIG.patterns,
-      custom: [{ name: "bad", regex: "[invalid" }],
-    },
-  };
-  const engine = new RedactionEngine({
-    config,
-    plugins: createBuiltinPlugins(config),
+// =============================================================================
+// End-to-end: plugin scope declarations
+// =============================================================================
+
+describe("plugin scope declarations", () => {
+  test("gRPC plugin scopes work alongside HTTP scopes", () => {
+    const grpcScopes: RedactionScopeDeclaration[] = [
+      {
+        id: "grpc.metadata",
+        name: "gRPC metadata",
+        event: "trace",
+        target: "data.metadata",
+        handler: "headers",
+        rules: { sensitiveKeys: ["authorization", "cookie"] },
+      },
+      {
+        id: "grpc.request",
+        name: "gRPC request",
+        event: "trace",
+        target: "data.request",
+        handler: "json",
+      },
+      {
+        id: "grpc.response",
+        name: "gRPC response",
+        event: "trace",
+        target: "data.response",
+        handler: "json",
+      },
+    ];
+
+    const compiled = compileScopes({
+      builtinScopes: BUILTIN_SCOPES,
+      pluginScopes: grpcScopes,
+      globalRules: DEFAULT_GLOBAL_RULES,
+      replacementFormat: "simple",
+    });
+
+    const event = {
+      type: "trace",
+      data: {
+        protocol: "grpc",
+        metadata: { authorization: "Bearer grpc-token", "x-request-id": "123" },
+        request: { user_id: "u_123" },
+        response: { name: "Alice", email: "alice@example.com" },
+      },
+    };
+
+    const result = redactEvent(event, compiled, "simple");
+    const data = result.data as Record<string, unknown>;
+
+    const metadata = data.metadata as Record<string, unknown>;
+    expect(metadata.authorization).toBe("[REDACTED]");
+    expect(metadata["x-request-id"]).toBe("123");
+
+    const response = data.response as Record<string, unknown>;
+    expect(response.name).toBe("Alice");
+    expect(response.email).not.toContain("alice@example.com");
   });
-  const result = engine.redact("hello world");
-  expect(result.value).toBe("hello world");
+
+  test("scope-specific keys don't leak across scopes", () => {
+    const scopeA: RedactionScopeDeclaration = {
+      id: "scope.a",
+      name: "Scope A",
+      event: "trace",
+      target: "data.a",
+      handler: "json",
+      rules: { sensitiveKeys: ["secret-a"] },
+    };
+
+    const scopeB: RedactionScopeDeclaration = {
+      id: "scope.b",
+      name: "Scope B",
+      event: "trace",
+      target: "data.b",
+      handler: "json",
+      rules: { sensitiveKeys: ["secret-b"] },
+    };
+
+    const compiled = compileScopes({
+      builtinScopes: [scopeA, scopeB],
+      globalRules: { sensitiveKeys: [], patterns: [], customPatterns: [] },
+      replacementFormat: "simple",
+    });
+
+    const event = {
+      type: "trace",
+      data: {
+        a: { "secret-a": "val-a", "secret-b": "val-b-in-a" },
+        b: { "secret-a": "val-a-in-b", "secret-b": "val-b" },
+      },
+    };
+
+    const result = redactEvent(event, compiled, "simple");
+    const data = result.data as Record<string, unknown>;
+
+    const a = data.a as Record<string, unknown>;
+    expect(a["secret-a"]).toBe("[REDACTED]");
+    expect(a["secret-b"]).toBe("val-b-in-a");
+
+    const b = data.b as Record<string, unknown>;
+    expect(b["secret-a"]).toBe("val-a-in-b");
+    expect(b["secret-b"]).toBe("[REDACTED]");
+  });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Details tracking
-// ═══════════════════════════════════════════════════════════════════════════
+// =============================================================================
+// Pattern plugins (individual)
+// =============================================================================
 
-test("details: tracks redacted fields with path and plugin", () => {
-  const engine = createEngine();
-  const result = engine.redact({
-    headers: { authorization: "Bearer abc" },
-    body: "user@example.com",
+describe("pattern plugins", () => {
+  test("credit card with separators", () => {
+    const engine = new RedactionEngine({
+      plugins: [creditCardPlugin],
+      replacementFormat: "partial",
+    });
+
+    const result = engine.redact({ card: "4111-1111-1111-1111" });
+    const val = result.value as Record<string, unknown>;
+    const masked = val.card as string;
+    expect(masked).toContain("1111");
+    expect(masked).not.toBe("4111-1111-1111-1111");
   });
-  expect(result.redacted).toBe(true);
-  const keyDetail = result.details.find(
-    (d) => d.path === "headers.authorization",
-  );
-  expect(keyDetail?.plugin).toBe("sensitive-keys");
 
-  const emailDetail = result.details.find((d) => d.path === "body");
-  expect(emailDetail?.plugin).toBe("email");
+  test("IP address masking", () => {
+    const engine = new RedactionEngine({
+      plugins: [ipAddressPlugin],
+      replacementFormat: "partial",
+    });
+
+    const result = engine.redact({ ip: "Server at 192.168.1.100" });
+    const val = result.value as Record<string, unknown>;
+    expect(val.ip).toContain("192.168");
+    expect(val.ip).not.toContain("1.100");
+  });
+});
+
+// =============================================================================
+// Regression tests
+// =============================================================================
+
+describe("regressions", () => {
+  test("urlQueryHandler preserves repeated query params", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["token"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = urlQueryHandler.process(
+      "https://api.example.com/data?token=a&token=b&page=1",
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+
+    const url = new URL(result.value as string);
+    const tokens = url.searchParams.getAll("token");
+    expect(tokens.length).toBe(2);
+    expect(tokens[0]).toBe("[REDACTED]");
+    expect(tokens[1]).toBe("[REDACTED]");
+    expect(url.searchParams.get("page")).toBe("1");
+  });
+
+  test("headersHandler handles set-cookie as string[]", () => {
+    const engine = new RedactionEngine({
+      plugins: [
+        sensitiveKeysPlugin({ useBuiltIn: false, additional: ["session", "auth"], excluded: [] }),
+      ],
+      replacementFormat: "simple",
+    });
+
+    const result = headersHandler.process(
+      {
+        "set-cookie": [
+          "session=secret1; Path=/; HttpOnly",
+          "auth=secret2; Path=/api; Secure",
+          "theme=dark; Path=/",
+        ],
+      },
+      { scopeId: "test", scopeName: "Test" },
+      engine,
+    );
+
+    const val = result.value as Record<string, unknown>;
+    const cookies = val["set-cookie"] as string[];
+    expect(cookies.length).toBe(3);
+
+    // session and auth cookies should be redacted, attributes preserved
+    expect(cookies[0]).toContain("Path=/");
+    expect(cookies[0]).toContain("HttpOnly");
+    expect(cookies[0]).not.toContain("secret1");
+
+    expect(cookies[1]).toContain("Path=/api");
+    expect(cookies[1]).toContain("Secure");
+    expect(cookies[1]).not.toContain("secret2");
+
+    // theme cookie should NOT be redacted
+    expect(cookies[2]).toBe("theme=dark; Path=/");
+  });
+
+  test("$self accessor writes back to event", () => {
+    const compiled = compileScopes({
+      builtinScopes: [{
+        id: "assertion.self",
+        name: "Assertion self",
+        event: "assertion",
+        target: "$self",
+        handler: "json",
+        rules: { sensitiveKeys: ["secret"] },
+      }],
+      globalRules: { sensitiveKeys: [], patterns: [], customPatterns: [] },
+      replacementFormat: "simple",
+    });
+
+    const event = {
+      type: "assertion",
+      message: "check passed",
+      secret: "hidden-value",
+      expected: "foo",
+    };
+
+    const result = redactEvent(event, compiled, "simple");
+    expect(result.secret).toBe("[REDACTED]");
+    expect(result.message).toBe("check passed");
+    expect(result.expected).toBe("foo");
+  });
 });

@@ -1,47 +1,184 @@
 /**
  * @module defaults
  *
- * Built-in sensitive keys, pattern source strings, and the default
- * redaction configuration used as the mandatory baseline for --share.
+ * Built-in scope declarations, pattern source strings, and default config.
+ *
+ * v2: HTTP scopes are declared as data, not as a fixed interface.
+ * They use the same shape as external plugin declarations.
  */
 
-import type { RedactionConfig } from "./types.js";
+import type {
+  GlobalRules,
+  RedactionConfig,
+  RedactionScopeDeclaration,
+} from "./types.js";
 
-// ── Built-in sensitive keys ─────────────────────────────────────────────────
+// ── Built-in HTTP scope declarations ─────────────────────────────────────────
 
 /**
- * Keys whose values are always redacted when matched (case-insensitive
- * substring match). Ported from glubean-v1 RedactionService for parity.
+ * Built-in scope declarations for HTTP, log, error, assertion, and step events.
+ *
+ * These are the "http-plugin" built-in contributor — they use the same
+ * declaration model as any external plugin.
  */
-export const BUILT_IN_SENSITIVE_KEYS: readonly string[] = [
-  "password",
-  "passwd",
-  "secret",
-  "token",
-  "api_key",
-  "apikey",
-  "api-key",
-  "access_token",
-  "refresh_token",
-  "authorization",
-  "auth",
-  "credential",
-  "credentials",
-  "private_key",
-  "privatekey",
-  "private-key",
-  "ssh_key",
-  "client_secret",
-  "client-secret",
-  "bearer",
+export const BUILTIN_SCOPES: RedactionScopeDeclaration[] = [
+  {
+    id: "http.request.headers",
+    name: "HTTP request headers",
+    event: "trace",
+    target: "data.requestHeaders",
+    handler: "headers",
+    rules: {
+      sensitiveKeys: ["authorization", "cookie", "x-api-key", "proxy-authorization"],
+    },
+  },
+  {
+    id: "http.request.query",
+    name: "HTTP request query",
+    event: "trace",
+    target: "data.url",
+    handler: "url-query",
+    rules: {
+      sensitiveKeys: [
+        "token",
+        "access_token",
+        "refresh_token",
+        "api_key",
+        "apikey",
+        "api-key",
+        "secret",
+        "password",
+      ],
+    },
+  },
+  {
+    id: "http.request.body",
+    name: "HTTP request body",
+    event: "trace",
+    target: "data.requestBody",
+    handler: "json",
+    rules: {
+      sensitiveKeys: [
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "client_secret",
+        "client-secret",
+        "private_key",
+        "privatekey",
+        "private-key",
+      ],
+    },
+  },
+  {
+    id: "http.response.headers",
+    name: "HTTP response headers",
+    event: "trace",
+    target: "data.responseHeaders",
+    handler: "headers",
+    rules: {
+      sensitiveKeys: ["set-cookie"],
+    },
+  },
+  {
+    id: "http.response.body",
+    name: "HTTP response body",
+    event: "trace",
+    target: "data.responseBody",
+    handler: "json",
+  },
+  {
+    id: "log.message",
+    name: "Log message",
+    event: "log",
+    target: "message",
+    handler: "raw-string",
+  },
+  {
+    id: "log.data",
+    name: "Log data",
+    event: "log",
+    target: "data",
+    handler: "json",
+  },
+  {
+    id: "error.message",
+    name: "Error message",
+    event: "error",
+    target: "message",
+    handler: "raw-string",
+  },
+  {
+    id: "error.stack",
+    name: "Error stack",
+    event: "error",
+    target: "stack",
+    handler: "raw-string",
+  },
+  {
+    id: "status.error",
+    name: "Status error",
+    event: "status",
+    target: "error",
+    handler: "raw-string",
+  },
+  {
+    id: "status.stack",
+    name: "Status stack",
+    event: "status",
+    target: "stack",
+    handler: "raw-string",
+  },
+  {
+    id: "assertion.message",
+    name: "Assertion message",
+    event: "assertion",
+    target: "message",
+    handler: "raw-string",
+  },
+  {
+    id: "assertion.actual",
+    name: "Assertion actual",
+    event: "assertion",
+    target: "actual",
+    handler: "json",
+  },
+  {
+    id: "assertion.expected",
+    name: "Assertion expected",
+    event: "assertion",
+    target: "expected",
+    handler: "json",
+  },
+  {
+    id: "warning.message",
+    name: "Warning message",
+    event: "warning",
+    target: "message",
+    handler: "raw-string",
+  },
+  {
+    id: "schema_validation.message",
+    name: "Schema validation message",
+    event: "schema_validation",
+    target: "message",
+    handler: "raw-string",
+  },
+  {
+    id: "step.returnState",
+    name: "Step return state",
+    event: "step_end",
+    target: "returnState",
+    handler: "json",
+  },
 ];
 
-// ── Built-in pattern source strings ─────────────────────────────────────────
+// ── Built-in pattern source strings ──────────────────────────────────────────
 
 /**
  * Regex source strings for built-in value-level patterns.
- * Plugins create new RegExp instances from these on each call
- * to avoid stale lastIndex state.
+ * Plugins create new RegExp instances from these on each call.
  */
 export const PATTERN_SOURCES: Record<
   string,
@@ -81,40 +218,42 @@ export const PATTERN_SOURCES: Record<
   },
 };
 
-// ── Default config ──────────────────────────────────────────────────────────
+// ── Default global rules ─────────────────────────────────────────────────────
 
 /**
- * The mandatory baseline configuration for --share.
+ * Default global additive rules.
  *
- * All scopes on, all patterns on, useBuiltIn keys, simple replacement.
- * User .glubean/redact.json can only add rules on top — never weaken this.
+ * These are intentionally minimal — most sensitive keys now live
+ * in scope-specific declarations, not in globals.
+ */
+export const DEFAULT_GLOBAL_RULES: GlobalRules = {
+  sensitiveKeys: [],
+  patterns: [
+    "jwt",
+    "bearer",
+    "awsKeys",
+    "githubTokens",
+    "email",
+    "ipAddress",
+    "creditCard",
+    "hexKeys",
+  ],
+  customPatterns: [],
+};
+
+// ── Default config ───────────────────────────────────────────────────────────
+
+/**
+ * Default redaction config v2.
+ *
+ * All built-in scopes enabled, all patterns enabled globally,
+ * scope-specific sensitive keys declared per scope.
  */
 export const DEFAULT_CONFIG: RedactionConfig = {
-  scopes: {
-    requestHeaders: true,
-    requestQuery: true,
-    requestBody: true,
-    responseHeaders: true,
-    responseBody: true,
-    consoleOutput: true,
-    errorMessages: true,
-    returnState: true,
-  },
-  sensitiveKeys: {
-    useBuiltIn: true,
-    additional: [],
-    excluded: [],
-  },
-  patterns: {
-    jwt: true,
-    bearer: true,
-    awsKeys: true,
-    githubTokens: true,
-    email: true,
-    ipAddress: true,
-    creditCard: true,
-    hexKeys: true,
-    custom: [],
-  },
+  scopes: BUILTIN_SCOPES.map((s) => ({
+    ...s,
+    enabled: true,
+  })),
+  globalRules: DEFAULT_GLOBAL_RULES,
   replacementFormat: "partial",
 };

@@ -1,23 +1,19 @@
 /**
  * @module adapter
  *
- * Scope adapter — maps ExecutionEvent types to redaction scopes.
+ * Generic event redaction dispatcher.
  *
- * Without this adapter, the engine's scope toggles are decorative.
- * This function dispatches each event's payload fields to the correct
- * scope so the engine can gate redaction per-scope.
- *
- * Both the CLI (for --share) and the server (for event ingestion) use
- * this adapter. The server adapter may handle additional premium scopes.
+ * v2 replaces the hardcoded event-type switch with a data-driven dispatcher
+ * that uses compiled scopes to find matching scopes, extract targets,
+ * and apply handlers.
  */
 
-import type { RedactionEngine } from "./engine.js";
-import type { RedactionConfig } from "./types.js";
+import type { CompiledScope, HandlerContext, RedactionResult } from "./types.js";
+import { createScopeEngine } from "./compiler.js";
 
 /**
- * A generic event shape compatible with both ExecutionEvent (oss runner)
- * and RunEvent (server). The adapter only reads `type` and mutates payload
- * fields in-place on a clone.
+ * A generic event shape. The dispatcher only reads `type` and mutates
+ * payload fields on a clone based on compiled scope declarations.
  */
 export interface RedactableEvent {
   type: string;
@@ -25,149 +21,42 @@ export interface RedactableEvent {
 }
 
 /**
- * Redact an event by dispatching its payload fields to the appropriate
- * scopes. Returns a new event object — the original is not mutated.
+ * Redact an event by dispatching its payload fields to matching scopes.
+ * Returns a new event object — the original is not mutated.
  *
- * Scope mapping:
- * - trace → requestHeaders, requestQuery, requestBody, responseHeaders, responseBody
- * - log → consoleOutput
- * - assertion → errorMessages
- * - error / status → errorMessages
- * - warning / schema_validation → errorMessages
- * - step_end → returnState
- * - metric, step_start, start, summary → no redaction
- *
- * @example
- * const redacted = redactEvent(engine, { type: "trace", data: { ... } });
+ * @param event  The event to redact.
+ * @param scopes Pre-compiled scopes from compileScopes().
+ * @param replacementFormat Replacement format for engine instances.
+ * @param maxDepth Optional max object depth.
  */
-export function redactEvent<C extends RedactionConfig>(
-  engine: RedactionEngine<C>,
+export function redactEvent(
   event: RedactableEvent,
+  scopes: CompiledScope[],
+  replacementFormat: "simple" | "labeled" | "partial" = "partial",
+  maxDepth?: number,
 ): RedactableEvent {
-  const t = event.type;
+  // Find all enabled scopes matching this event type
+  const matching = scopes.filter(
+    (scope) => scope.enabled && scope.event === event.type,
+  );
 
-  // Events that don't need redaction — return as-is
-  if (
-    t === "metric" ||
-    t === "step_start" ||
-    t === "start" ||
-    t === "summary" ||
-    t === "timeout_update"
-  ) {
-    return event;
-  }
-
-  // step_end: only needs redaction if returnState is present
-  if (t === "step_end") {
-    if (event.returnState != null) {
-      const clone = structuredClone(event);
-      clone.returnState = engine.redact(
-        clone.returnState,
-        "returnState" as keyof C["scopes"] & string,
-      ).value;
-      return clone;
-    }
-    return event;
-  }
+  if (matching.length === 0) return event;
 
   // Clone to avoid mutating the original
   const clone = structuredClone(event);
 
-  if (t === "trace") {
-    // Trace events have data: ApiTrace with headers/bodies
-    const data = clone.data as Record<string, unknown> | undefined;
-    if (data) {
-      if (data.requestHeaders != null) {
-        data.requestHeaders = engine.redact(
-          data.requestHeaders,
-          "requestHeaders" as keyof C["scopes"] & string,
-        ).value;
-      }
-      if (data.requestBody != null) {
-        data.requestBody = engine.redact(
-          data.requestBody,
-          "requestBody" as keyof C["scopes"] & string,
-        ).value;
-      }
-      if (data.responseHeaders != null) {
-        data.responseHeaders = engine.redact(
-          data.responseHeaders,
-          "responseHeaders" as keyof C["scopes"] & string,
-        ).value;
-      }
-      if (data.responseBody != null) {
-        data.responseBody = engine.redact(
-          data.responseBody,
-          "responseBody" as keyof C["scopes"] & string,
-        ).value;
-      }
-      // URL may contain query params with secrets
-      if (typeof data.url === "string") {
-        data.url = engine.redact(
-          data.url,
-          "requestQuery" as keyof C["scopes"] & string,
-        ).value as string;
-      }
-    }
-  } else if (t === "log") {
-    if (clone.message != null) {
-      clone.message = engine.redact(
-        clone.message,
-        "consoleOutput" as keyof C["scopes"] & string,
-      ).value;
-    }
-    if (clone.data != null) {
-      clone.data = engine.redact(
-        clone.data,
-        "consoleOutput" as keyof C["scopes"] & string,
-      ).value;
-    }
-  } else if (t === "assertion") {
-    if (clone.message != null) {
-      clone.message = engine.redact(
-        clone.message,
-        "errorMessages" as keyof C["scopes"] & string,
-      ).value;
-    }
-    if (clone.actual != null) {
-      clone.actual = engine.redact(
-        clone.actual,
-        "errorMessages" as keyof C["scopes"] & string,
-      ).value;
-    }
-    if (clone.expected != null) {
-      clone.expected = engine.redact(
-        clone.expected,
-        "errorMessages" as keyof C["scopes"] & string,
-      ).value;
-    }
-  } else if (t === "error") {
-    if (clone.message != null) {
-      clone.message = engine.redact(
-        clone.message,
-        "errorMessages" as keyof C["scopes"] & string,
-      ).value;
-    }
-  } else if (t === "status") {
-    if (clone.error != null) {
-      clone.error = engine.redact(
-        clone.error,
-        "errorMessages" as keyof C["scopes"] & string,
-      ).value;
-    }
-    if (clone.stack != null) {
-      clone.stack = engine.redact(
-        clone.stack,
-        "errorMessages" as keyof C["scopes"] & string,
-      ).value;
-    }
-  } else if (t === "warning" || t === "schema_validation") {
-    if (clone.message != null) {
-      clone.message = engine.redact(
-        clone.message,
-        "errorMessages" as keyof C["scopes"] & string,
-      ).value;
-    }
+  for (const scope of matching) {
+    const current = scope.get(clone);
+    if (current === undefined) continue;
+
+    const engine = createScopeEngine(scope, replacementFormat, maxDepth);
+    const ctx: HandlerContext = {
+      scopeId: scope.id,
+      scopeName: scope.name,
+    };
+
+    const result = scope.handler.process(current, ctx, engine);
+    scope.set(clone, result.value);
   }
 
   return clone;

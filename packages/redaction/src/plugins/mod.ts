@@ -1,11 +1,11 @@
 /**
  * @module plugins
  *
- * Re-exports all built-in plugins and provides `createBuiltinPlugins()`
- * factory that assembles the plugin list from a RedactionConfig.
+ * Re-exports all built-in plugins and provides factories
+ * for assembling plugin pipelines.
  */
 
-import type { RedactionConfig, RedactionPlugin } from "../types.js";
+import type { RedactionPlugin } from "../types.js";
 import { sensitiveKeysPlugin } from "./sensitive-keys.js";
 import { jwtPlugin } from "./jwt.js";
 import { bearerPlugin } from "./bearer.js";
@@ -41,44 +41,16 @@ const PATTERN_PLUGINS: Record<string, RedactionPlugin> = {
 };
 
 /**
- * Create the full plugin list from a RedactionConfig.
- *
- * Order: sensitive-keys plugin first (key-level), then enabled pattern
- * plugins (value-level), then user custom patterns.
- *
- * @example
- * const plugins = createBuiltinPlugins(DEFAULT_CONFIG);
- * const engine = new RedactionEngine({ config: DEFAULT_CONFIG, plugins });
+ * Create pattern plugins for a set of enabled pattern names.
  */
-export function createBuiltinPlugins(
-  config: RedactionConfig,
+export function createPatternPlugins(
+  enabledPatterns: Set<string>,
 ): RedactionPlugin[] {
   const plugins: RedactionPlugin[] = [];
-
-  // Key-level plugin always first
-  plugins.push(sensitiveKeysPlugin(config.sensitiveKeys));
-
-  // Add enabled pattern plugins
-  const patternFlags = config.patterns as unknown as Record<string, unknown>;
   for (const [name, plugin] of Object.entries(PATTERN_PLUGINS)) {
-    if (patternFlags[name] === true) {
+    if (enabledPatterns.has(name)) {
       plugins.push(plugin);
     }
   }
-
-  // Add user custom patterns
-  for (const custom of config.patterns.custom ?? []) {
-    try {
-      // Validate regex compiles
-      new RegExp(custom.regex, "g");
-      plugins.push({
-        name: custom.name,
-        matchValue: () => new RegExp(custom.regex, "g"),
-      });
-    } catch {
-      // Skip invalid regex patterns — per arch doc, CLI warns but doesn't abort
-    }
-  }
-
   return plugins;
 }

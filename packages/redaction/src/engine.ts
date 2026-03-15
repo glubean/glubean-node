@@ -1,21 +1,26 @@
 /**
  * @module engine
  *
- * RedactionEngine — the core recursive JSON walker that applies plugins
+ * RedactionEngine — recursive JSON walker that applies plugins
  * to detect and mask sensitive data.
  *
- * Ported from glubean-v1 RedactionService (policyRedactValue / policyRedactObject /
- * policyRedactString) with the monolithic class decomposed into a plugin pipeline.
+ * v2: the engine is instantiated per-scope with a scope-specific plugin pipeline.
+ * It no longer does scope gating — that responsibility moves to the compiler/dispatcher.
  */
 
-import type { RedactionConfig, RedactionContext, RedactionPlugin, RedactionResult } from "./types.js";
+import type {
+  RedactionContext,
+  RedactionPlugin,
+  RedactionResult,
+  ScopeContext,
+} from "./types.js";
 
 /** Options for constructing a RedactionEngine instance. */
-export interface RedactionEngineOptions<
-  C extends RedactionConfig = RedactionConfig,
-> {
-  config: C;
+export interface RedactionEngineOptions {
+  /** Plugin pipeline for this engine instance. */
   plugins: RedactionPlugin[];
+  /** Replacement format. */
+  replacementFormat: "simple" | "labeled" | "partial";
   /** Max object nesting depth before truncation. Default: 10. */
   maxDepth?: number;
 }
@@ -23,8 +28,6 @@ export interface RedactionEngineOptions<
 /**
  * Generic partial mask: show first 3 and last 3 characters for long values,
  * less for shorter values, full mask for very short ones.
- *
- * Used as fallback when a plugin does not provide its own partialMask().
  */
 export function genericPartialMask(value: string): string {
   const len = value.length;
@@ -37,37 +40,28 @@ export function genericPartialMask(value: string): string {
  * Plugin-based redaction engine.
  *
  * Walks JSON values recursively, applying registered plugins for key-level
- * and value-level redaction. Supports three replacement formats:
- * "simple" ([REDACTED]), "labeled" ([REDACTED:plugin_name]), "partial" (smart masking).
+ * and value-level redaction.
  */
-export class RedactionEngine<C extends RedactionConfig = RedactionConfig> {
-  private readonly config: C;
+export class RedactionEngine {
   private readonly plugins: RedactionPlugin[];
+  private readonly replacementFormat: "simple" | "labeled" | "partial";
   private readonly maxDepth: number;
 
-  constructor(options: RedactionEngineOptions<C>) {
-    this.config = options.config;
+  constructor(options: RedactionEngineOptions) {
     this.plugins = options.plugins;
+    this.replacementFormat = options.replacementFormat;
     this.maxDepth = options.maxDepth ?? 10;
   }
 
   /**
    * Redact a value. Recursively walks objects and arrays.
    *
-   * @param value   The value to redact (deep-cloned internally).
-   * @param scope   Optional scope key — if the scope is disabled in config, returns value unchanged.
+   * @param value The value to redact.
+   * @param ctx   Optional scope context for plugin dispatch.
    */
-  redact(value: unknown, scope?: keyof C["scopes"] & string): RedactionResult {
-    // Scope gate: if scope is specified and disabled, skip entirely
-    if (scope) {
-      const scopes = this.config.scopes as unknown as Record<string, boolean>;
-      if (scopes[scope] === false) {
-        return { value, redacted: false, details: [] };
-      }
-    }
-
+  redact(value: unknown, ctx?: ScopeContext): RedactionResult {
+    const scopeStr = ctx?.id ?? "";
     const details: RedactionResult["details"] = [];
-    const scopeStr = scope ?? "";
     const result = this.walkValue(value, scopeStr, [], details, 0);
     return {
       value: result.value,
@@ -156,9 +150,9 @@ export class RedactionEngine<C extends RedactionConfig = RedactionConfig> {
       }
 
       if (keySensitive) {
-        const replacement = this.config.replacementFormat;
-        if (replacement === "partial") {
-          const str = value === null || value === undefined ? "" : String(value);
+        if (this.replacementFormat === "partial") {
+          const str =
+            value === null || value === undefined ? "" : String(value);
           result[key] = genericPartialMask(str);
         } else {
           result[key] = "[REDACTED]";
@@ -207,15 +201,13 @@ export class RedactionEngine<C extends RedactionConfig = RedactionConfig> {
       const regex = plugin.matchValue(result, ctx);
       if (!regex) continue;
 
-      // Test if the pattern matches
       if (regex.test(result)) {
         regex.lastIndex = 0; // Reset after test()
 
-        const replacement = this.config.replacementFormat;
-        if (replacement === "partial") {
+        if (this.replacementFormat === "partial") {
           const maskFn = plugin.partialMask ?? genericPartialMask;
           result = result.replace(regex, (match) => maskFn(match));
-        } else if (replacement === "labeled") {
+        } else if (this.replacementFormat === "labeled") {
           const tag = `[REDACTED:${plugin.name}]`;
           result = result.replace(regex, tag);
         } else {

@@ -1,0 +1,240 @@
+/**
+ * @module compiler
+ *
+ * Compiles scope declarations into ready-to-execute CompiledScope[].
+ *
+ * Flow:
+ * 1. Merge built-in + plugin scope declarations
+ * 2. Apply user overrides by scope id
+ * 3. Resolve handler for each scope
+ * 4. Build per-scope plugin pipeline (scope keys + global keys + patterns)
+ * 5. Return CompiledScope[] for use by redactEvent()
+ */
+
+import type {
+  CompiledScope,
+  GlobalRules,
+  RedactionConfig,
+  RedactionHandler,
+  RedactionPlugin,
+  RedactionScope,
+  RedactionScopeDeclaration,
+  ScopeRules,
+} from "./types.js";
+import { RedactionEngine } from "./engine.js";
+import { BUILTIN_HANDLERS } from "./handlers.js";
+import { sensitiveKeysPlugin } from "./plugins/sensitive-keys.js";
+import { createPatternPlugins } from "./plugins/mod.js";
+import { PATTERN_SOURCES } from "./defaults.js";
+
+/** User-provided scope overrides keyed by scope id. */
+export interface ScopeOverride {
+  enabled?: boolean;
+  rules?: ScopeRules;
+}
+
+/** Compiler options. */
+export interface CompilerOptions {
+  /** Built-in scope declarations (HTTP, log, error, etc.). */
+  builtinScopes: RedactionScopeDeclaration[];
+  /** Plugin-provided scope declarations. */
+  pluginScopes?: RedactionScopeDeclaration[];
+  /** Plugin-provided custom handlers. */
+  pluginHandlers?: RedactionHandler[];
+  /** User overrides by scope id. */
+  userOverrides?: Record<string, ScopeOverride>;
+  /** Global additive rules. */
+  globalRules: GlobalRules;
+  /** Replacement format. */
+  replacementFormat: "simple" | "labeled" | "partial";
+  /** Max object nesting depth. Default: 10. */
+  maxDepth?: number;
+}
+
+/**
+ * Resolve field path accessor functions.
+ *
+ * Supports dot-separated paths (e.g., "data.requestHeaders")
+ * and "$self" for the whole event.
+ */
+function makeAccessors(target: string): {
+  get: (event: Record<string, unknown>) => unknown;
+  set: (event: Record<string, unknown>, value: unknown) => void;
+} {
+  if (target === "$self") {
+    return {
+      get: (event) => event,
+      set: (event, value) => {
+        // $self: merge redacted properties back onto the event
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          const redacted = value as Record<string, unknown>;
+          for (const key of Object.keys(redacted)) {
+            event[key] = redacted[key];
+          }
+        }
+      },
+    };
+  }
+
+  const parts = target.split(".");
+
+  return {
+    get(event) {
+      let current: unknown = event;
+      for (const part of parts) {
+        if (current == null || typeof current !== "object") return undefined;
+        current = (current as Record<string, unknown>)[part];
+      }
+      return current;
+    },
+    set(event, value) {
+      let current: Record<string, unknown> = event;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const next = current[parts[i]];
+        if (next == null || typeof next !== "object") return;
+        current = next as Record<string, unknown>;
+      }
+      current[parts[parts.length - 1]] = value;
+    },
+  };
+}
+
+/**
+ * Build the plugin pipeline for a specific scope.
+ *
+ * Order:
+ * 1. Sensitive keys plugin (scope-specific + global additive keys)
+ * 2. Pattern plugins (scope-specific + global patterns)
+ * 3. Custom patterns from global rules
+ */
+function buildScopePlugins(
+  scopeRules: ScopeRules | undefined,
+  globalRules: GlobalRules,
+): RedactionPlugin[] {
+  const plugins: RedactionPlugin[] = [];
+
+  // Merge sensitive keys: scope-specific + global
+  const allKeys = new Set<string>();
+  if (scopeRules?.sensitiveKeys) {
+    for (const k of scopeRules.sensitiveKeys) allKeys.add(k.toLowerCase());
+  }
+  for (const k of globalRules.sensitiveKeys) allKeys.add(k.toLowerCase());
+
+  if (allKeys.size > 0) {
+    plugins.push(
+      sensitiveKeysPlugin({
+        useBuiltIn: false,
+        additional: [...allKeys],
+        excluded: [],
+      }),
+    );
+  }
+
+  // Merge pattern names: scope-specific + global
+  const enabledPatterns = new Set<string>();
+  if (scopeRules?.patterns) {
+    for (const p of scopeRules.patterns) enabledPatterns.add(p);
+  }
+  for (const p of globalRules.patterns) enabledPatterns.add(p);
+
+  // Add pattern plugins for enabled patterns
+  const patternPlugins = createPatternPlugins(enabledPatterns);
+  plugins.push(...patternPlugins);
+
+  // Add custom patterns from global rules
+  for (const custom of globalRules.customPatterns) {
+    try {
+      new RegExp(custom.regex, "g");
+      plugins.push({
+        name: custom.name,
+        matchValue: () => new RegExp(custom.regex, "g"),
+      });
+    } catch {
+      // Skip invalid regex
+    }
+  }
+
+  return plugins;
+}
+
+/**
+ * Compile scope declarations into ready-to-execute CompiledScope[].
+ */
+export function compileScopes(options: CompilerOptions): CompiledScope[] {
+  // Merge all scope declarations
+  const allDeclarations = [
+    ...options.builtinScopes,
+    ...(options.pluginScopes ?? []),
+  ];
+
+  // Build handler registry
+  const handlers: Record<string, RedactionHandler> = { ...BUILTIN_HANDLERS };
+  if (options.pluginHandlers) {
+    for (const h of options.pluginHandlers) {
+      handlers[h.name] = h;
+    }
+  }
+
+  // Compile each scope
+  const compiled: CompiledScope[] = [];
+
+  for (const decl of allDeclarations) {
+    // Apply user overrides
+    const override = options.userOverrides?.[decl.id];
+    const enabled = override?.enabled ?? true;
+    const rules: ScopeRules = {
+      sensitiveKeys: [
+        ...(decl.rules?.sensitiveKeys ?? []),
+        ...(override?.rules?.sensitiveKeys ?? []),
+      ],
+      patterns: [
+        ...(decl.rules?.patterns ?? []),
+        ...(override?.rules?.patterns ?? []),
+      ],
+    };
+
+    // Resolve handler
+    const handler = handlers[decl.handler];
+    if (!handler) {
+      throw new Error(
+        `Redaction scope "${decl.id}" references unknown handler "${decl.handler}"`,
+      );
+    }
+
+    // Build per-scope plugin pipeline
+    const plugins = buildScopePlugins(rules, options.globalRules);
+
+    // Build field accessors
+    const accessors = makeAccessors(decl.target);
+
+    compiled.push({
+      id: decl.id,
+      name: decl.name,
+      event: decl.event,
+      enabled,
+      get: accessors.get,
+      set: accessors.set,
+      handler,
+      plugins,
+    });
+  }
+
+  return compiled;
+}
+
+/**
+ * Create a scope-specific RedactionEngine instance.
+ *
+ * Each scope gets its own engine with its own plugin pipeline.
+ */
+export function createScopeEngine(
+  scope: CompiledScope,
+  replacementFormat: "simple" | "labeled" | "partial",
+  maxDepth?: number,
+): RedactionEngine {
+  return new RedactionEngine({
+    plugins: scope.plugins,
+    replacementFormat,
+    maxDepth,
+  });
+}
