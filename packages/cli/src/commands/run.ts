@@ -1,8 +1,11 @@
 import {
+  createContextWithSession,
+  discoverSessionFile,
   evaluateThresholds,
   type ExecutionEvent,
   MetricCollector,
   normalizePositiveTimeoutMs,
+  RunOrchestrator,
   TestExecutor,
   toSingleExecutionOptions,
 } from "@glubean/runner";
@@ -58,6 +61,7 @@ interface RunOptions {
   project?: string;
   token?: string;
   apiUrl?: string;
+  noSession?: boolean;
 }
 
 interface CollectedTestRun {
@@ -579,6 +583,62 @@ export async function runCommand(
     fileGroups.set(entry.filePath, group);
   }
 
+  // ── Session discovery and setup ───────────────────────────────────────────
+  const sessionState: Record<string, unknown> = {};
+  const sessionFile = options.noSession
+    ? undefined
+    : discoverSessionFile(startDir, rootDir);
+  const orchestrator = new RunOrchestrator(executor);
+
+  if (sessionFile) {
+    console.log(
+      `${colors.dim}Session: ${relative(process.cwd(), sessionFile)}${colors.reset}`,
+    );
+    let sessionFailed = false;
+
+    for await (const event of orchestrator.runSessionSetup(
+      sessionFile,
+      { vars: envVars, secrets },
+      toSingleExecutionOptions(shared),
+    )) {
+      if (event.type === "session:set") {
+        sessionState[event.key] = event.value;
+      } else if (event.type === "status" && event.status === "failed") {
+        sessionFailed = true;
+        console.log(
+          `  ${colors.red}✗ Session setup failed${event.error ? `: ${event.error}` : ""}${colors.reset}`,
+        );
+      } else if (event.type === "log") {
+        console.log(
+          `  ${colors.dim}[session] ${event.message}${colors.reset}`,
+        );
+      }
+    }
+
+    if (sessionFailed) {
+      // Best-effort teardown before exiting
+      for await (const _event of orchestrator.runSessionTeardown(
+        sessionFile,
+        { vars: envVars, secrets },
+        sessionState,
+        toSingleExecutionOptions(shared),
+      )) {
+        // Silently consume teardown events
+      }
+      console.log(
+        `\n${colors.red}Session setup failed. All tests skipped.${colors.reset}`,
+      );
+      process.exit(1);
+    }
+
+    const keyCount = Object.keys(sessionState).length;
+    if (keyCount > 0) {
+      console.log(
+        `${colors.dim}  ${keyCount} session value${keyCount > 1 ? "s" : ""} set${colors.reset}`,
+      );
+    }
+  }
+
   const compactUrl = (url: string): string => {
     try {
       const u = new URL(url);
@@ -755,6 +815,7 @@ export async function runCommand(
         {
           vars: envVars,
           secrets,
+          ...(Object.keys(sessionState).length > 0 && { session: sessionState }),
         },
         {
           ...toSingleExecutionOptions(shared),
@@ -973,6 +1034,12 @@ export async function runCommand(
             );
           }
           break;
+
+        case "session:set":
+          // Accumulate session writes from tests for subsequent files
+          sessionState[event.key] = event.value;
+          // Do NOT fall through to testEvents — internal only
+          continue;
       }
 
       if (testStarted) testEvents.push(event);
@@ -981,6 +1048,26 @@ export async function runCommand(
     if (testStarted) {
       if (!errorMsg) errorMsg = "Process exited before test completed";
       finalizeTest();
+    }
+  }
+
+  // ── Session teardown ───────────────────────────────────────────────────
+  if (sessionFile) {
+    for await (const event of orchestrator.runSessionTeardown(
+      sessionFile,
+      { vars: envVars, secrets },
+      sessionState,
+      toSingleExecutionOptions(shared),
+    )) {
+      if (event.type === "log") {
+        console.log(
+          `  ${colors.dim}[session] ${event.message}${colors.reset}`,
+        );
+      } else if (event.type === "status" && event.status === "failed") {
+        console.log(
+          `  ${colors.yellow}⚠ Session teardown failed${event.error ? `: ${event.error}` : ""}${colors.reset}`,
+        );
+      }
     }
   }
 

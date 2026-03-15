@@ -99,11 +99,11 @@ if (args.exportNames) {
   }
 }
 
-if (!testUrl || (!testId && !testIds)) {
+if (!testUrl) {
   console.log(
     JSON.stringify({
       type: "error",
-      message: "Missing required arguments: --testUrl and (--testId or --testIds)",
+      message: "Missing required argument: --testUrl",
     }),
   );
   process.exit(1);
@@ -131,6 +131,8 @@ const rawSecrets = (contextData.secrets ?? {}) as Record<string, string>;
 // Execution-level retry metadata injected by executor/control plane.
 // 0 => first execution attempt.
 const retryCount = (contextData.retryCount ?? 0) as number;
+const sessionData = (contextData.session ?? {}) as Record<string, unknown>;
+const sessionMode = contextData.sessionMode as "setup" | "teardown" | undefined;
 
 function normalizeTestTags(
   input: string | string[] | undefined,
@@ -477,6 +479,25 @@ const ctx = {
       }
       return value;
     },
+  },
+  session: {
+    get: (key: string) => sessionData[key],
+    require: (key: string) => {
+      const value = sessionData[key];
+      if (value === undefined) {
+        throw new Error(
+          `Session key '${key}' is required but not set. Check your session.ts setup.`,
+        );
+      }
+      return value;
+    },
+    set: (key: string, value: unknown) => {
+      sessionData[key] = value;
+      console.log(
+        JSON.stringify({ type: "session:set", key, value, ts: Date.now() }),
+      );
+    },
+    entries: () => ({ ...sessionData }),
   },
 
   // Logging function
@@ -1356,6 +1377,63 @@ try {
   );
 
   const userModule = await import(testUrl!);
+
+  // ── Session mode: run setup() or teardown() instead of tests ──
+  if (sessionMode) {
+    const def = userModule.default;
+    if (!def || typeof def.setup !== "function") {
+      console.log(
+        JSON.stringify({
+          type: "status",
+          status: "failed",
+          error: `Session file must export a default SessionDefinition with a setup() function. Got: ${typeof def}`,
+        }),
+      );
+      process.exit(1);
+    }
+
+    const sessionCtx = {
+      vars: ctx.vars,
+      secrets: ctx.secrets,
+      http: ctx.http,
+      session: ctx.session,
+      log: ctx.log,
+    };
+
+    try {
+      if (sessionMode === "setup") {
+        await def.setup(sessionCtx);
+      } else if (sessionMode === "teardown" && typeof def.teardown === "function") {
+        await def.teardown(sessionCtx);
+      }
+      console.log(
+        JSON.stringify({ type: "status", status: "completed" }),
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      console.log(
+        JSON.stringify({
+          type: "status",
+          status: "failed",
+          error: message,
+          ...(stack && { stack }),
+        }),
+      );
+    }
+    process.exit(0);
+  }
+
+  // ── Normal test mode: testId or testIds required ──
+  if (!testId && !testIds) {
+    console.log(
+      JSON.stringify({
+        type: "error",
+        message: "Missing required arguments: --testId or --testIds",
+      }),
+    );
+    process.exit(1);
+  }
 
   if (testIds) {
     // ── File-level batch mode ──

@@ -34,3 +34,17 @@ export {
 export type { ResolvedTest } from "./resolve.js";
 
 export { aggregate, evaluateThresholds, MetricCollector, parseExpression } from "./thresholds.js";
+
+export {
+  buildExecutionOrder,
+  collectSessionUpdates,
+  createContextWithSession,
+  discoverSessionFile,
+  RunOrchestrator,
+} from "./orchestrator.js";
+export type {
+  FileScheduleEntry,
+  OrchestratorOptions,
+  SessionLifecycleEvent,
+  SessionState,
+} from "./orchestrator.js";

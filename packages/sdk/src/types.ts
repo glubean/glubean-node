@@ -167,6 +167,85 @@ export interface SecretsAccessor {
 }
 
 /**
+ * Key-value store shared across all tests in a run.
+ * Values are set during session setup (`session.ts`) and readable by all test files.
+ *
+ * **Current guarantees (sequential mode):**
+ * - Setup values are available to all test files
+ * - Within-file writes via `set()` are immediate
+ * - Cross-file writes propagate in sequential execution order
+ * - `set()` emits an internal control event (not visible in timeline or uploaded data)
+ *
+ * **Not yet supported:**
+ * - Parallel visibility guarantees (requires `dependsOn` scheduling)
+ *
+ * All values must be strings — use `JSON.stringify()`/`JSON.parse()` for objects.
+ *
+ * @example Reading session values in a test
+ * ```ts
+ * const token = ctx.session.require("token");
+ * const userId = ctx.session.get("userId");
+ * ```
+ *
+ * @example Writing session values (sequential propagation)
+ * ```ts
+ * ctx.session.set("orderId", createdOrder.id);
+ * ```
+ */
+export interface SessionAccessor {
+  /** Returns the value if present, otherwise undefined. */
+  get<T = unknown>(key: string): T | undefined;
+
+  /** Returns the value or throws if missing. */
+  require<T = unknown>(key: string): T;
+
+  /** Sets a session value. Must be JSON-serializable. Available to subsequent tests. */
+  set(key: string, value: unknown): void;
+
+  /** Returns all session key-value pairs. */
+  entries(): Record<string, unknown>;
+}
+
+/**
+ * The context passed to session setup/teardown functions.
+ * Has access to vars, secrets, http, session, and logging — but no assertions.
+ */
+export interface SessionSetupContext {
+  vars: VarsAccessor;
+  secrets: SecretsAccessor;
+  http: HttpClient;
+  session: SessionAccessor;
+  log(message: string, data?: unknown): void;
+}
+
+/**
+ * Definition for a session setup/teardown lifecycle.
+ *
+ * @example
+ * ```ts
+ * import { defineSession } from "@glubean/sdk";
+ *
+ * export default defineSession({
+ *   async setup(ctx) {
+ *     const { access_token } = await ctx.http
+ *       .post("/auth/login", { json: { user: ctx.vars.require("USER"), pass: ctx.secrets.require("PASS") } })
+ *       .json();
+ *     ctx.session.set("token", access_token);
+ *   },
+ *   async teardown(ctx) {
+ *     await ctx.http.post("/auth/logout", {
+ *       headers: { Authorization: `Bearer ${ctx.session.get("token")}` },
+ *     });
+ *   },
+ * });
+ * ```
+ */
+export interface SessionDefinition {
+  setup: (ctx: SessionSetupContext) => Promise<void>;
+  teardown?: (ctx: SessionSetupContext) => Promise<void>;
+}
+
+/**
  * The context passed to every test function.
  * Provides access to environment variables, secrets, logging, assertions, API tracing,
  * and a pre-configured HTTP client.
@@ -201,6 +280,8 @@ export interface TestContext {
   vars: VarsAccessor;
   /** Secrets accessor (e.g., API_KEY) - injected securely */
   secrets: SecretsAccessor;
+  /** Session state shared across all tests in a run. Set in session.ts setup, readable everywhere. */
+  session: SessionAccessor;
 
   /**
    * Pre-configured HTTP client with auto-tracing, auto-metrics, and retry.
@@ -825,6 +906,7 @@ export interface ConfigureOptions {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   plugins?: Record<string, PluginFactory<any> | PluginEntry<any>>;
+
 }
 
 /**

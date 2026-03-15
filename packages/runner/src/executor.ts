@@ -87,6 +87,7 @@ export type ExecutionEvent =
     retriesUsed?: number;
   }
   | { type: "timeout_update"; timeout: number }
+  | { type: "session:set"; key: string; value: unknown; ts: number }
   | {
     type: "summary";
     data: {
@@ -121,6 +122,9 @@ export interface ExecutionNetworkPolicy {
 export interface ExecutionContext {
   vars: Record<string, string>;
   secrets: Record<string, string>;
+  session?: Record<string, unknown>;
+  /** When set, harness runs session.ts setup/teardown instead of tests. */
+  sessionMode?: "setup" | "teardown";
   test?: {
     id?: string;
     tags?: string[];
@@ -595,6 +599,10 @@ export class TestExecutor {
           timelineEvent = { type: "step_end", ts, ...(includeTestId && { testId }), index: event.index, name: event.name, status: event.status, durationMs: event.durationMs, assertions: event.assertions, failedAssertions: event.failedAssertions, error: event.error, attempts: event.attempts, retriesUsed: event.retriesUsed, ...(event.returnState !== undefined && { returnState: event.returnState }) };
           break;
         case "timeout_update":
+          break;
+
+        case "session:set":
+          // Internal-only: accumulated by orchestrator, never in timeline
           break;
       }
 

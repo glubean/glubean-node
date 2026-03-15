@@ -1511,6 +1511,9 @@ export { configure, resolveTemplate } from "./configure.js";
 // Re-export plugin utilities
 export { definePlugin } from "./plugin.js";
 
+// Session API
+export { defineSession } from "./session.js";
+
 // Re-export assertion utilities
 export { Expectation, ExpectFailError } from "./expect.js";
 export type { AssertEmitter, AssertionEmission, CustomMatchers, MatcherFn, MatcherResult } from "./expect.js";

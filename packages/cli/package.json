@@ -3,7 +3,6 @@
   "version": "0.1.11",
   "type": "module",
   "bin": {
-    "gb": "./bin/gb.js",
     "glubean": "./bin/gb.js"
   },
   "exports": {

@@ -85,6 +85,7 @@ program
   .option("--reporter <format>", 'Output format: "junit" or "junit:/path/to/output.xml"')
   .option("--trace-limit <count>", "Max trace files to keep per test (default: 20)")
   .option("--ci", "CI mode: enables --fail-fast and --reporter junit")
+  .option("--no-session", "Skip session setup/teardown")
   .option("--upload", "Upload run results and artifacts to Glubean Cloud")
   .option("--project <id>", "Glubean Cloud project ID (or GLUBEAN_PROJECT_ID env)")
   .option("--token <token>", "Auth token for cloud upload (or GLUBEAN_TOKEN env)")
@@ -137,6 +138,7 @@ program
       reporter,
       reporterPath,
       traceLimit: options.traceLimit ? parseInt(options.traceLimit, 10) : undefined,
+      noSession: options.noSession,
       upload: options.upload,
       project: options.project,
       token: options.token,
