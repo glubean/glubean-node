@@ -105,11 +105,19 @@ async function findProjectConfig(
     try {
       const pkgJson = resolve(dir, "package.json");
       await stat(pkgJson);
-      return { rootDir: dir, configPath: pkgJson };
+      // Check if this is a glubean project (has @glubean/sdk dependency)
+      // If not, keep walking up — this avoids latching onto unrelated parent projects
+      const content = JSON.parse(await readFile(pkgJson, "utf-8"));
+      const deps = { ...content.dependencies, ...content.devDependencies };
+      if ("@glubean/sdk" in deps || content.glubean) {
+        return { rootDir: dir, configPath: pkgJson };
+      }
     } catch {
-      dir = resolve(dir, "..");
+      // parse error or stat error — skip
     }
+    dir = resolve(dir, "..");
   }
+  // No glubean project found — use the starting directory (scratch mode)
   return { rootDir: startDir };
 }
 
@@ -1044,6 +1052,14 @@ export async function runCommand(
       }
 
       if (testStarted) testEvents.push(event);
+    }
+
+    if (!testStarted && errorMsg) {
+      // Harness failed before emitting any test start (e.g. module load error)
+      console.log(
+        `  ${colors.red}✗ ${errorMsg}${colors.reset}`,
+      );
+      failed++;
     }
 
     if (testStarted) {
