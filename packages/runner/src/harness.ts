@@ -7,7 +7,21 @@
  */
 
 import { parseArgs } from "node:util";
-import ky from "ky";
+
+/* eslint-disable no-var */
+declare global {
+  var __glubeanRuntime: {
+    vars: Record<string, string>;
+    secrets: Record<string, string>;
+    http: Record<string, unknown>;
+    test: Record<string, unknown>;
+    action: (a: import("@glubean/sdk").GlubeanAction) => void;
+    event: (ev: import("@glubean/sdk").GlubeanEvent) => void;
+    log: (message: string, data?: unknown) => void;
+  };
+}
+/* eslint-enable no-var */
+import ky, { type KyInstance, type Options as KyOptions, type NormalizedOptions } from "ky";
 import {
   classifyHostnameBlockReason,
   classifyIpBlockReason,
@@ -324,7 +338,7 @@ function resolveSchemaEntry<T>(entry: SchemaEntry<T>): {
 } {
   if ("schema" in entry && entry.schema != null) {
     
-    const obj = entry as { schema: SchemaLike<T>; severity?: any };
+    const obj = entry as { schema: SchemaLike<T>; severity?: "error" | "warn" | "fatal" };
     return { schema: obj.schema, severity: obj.severity ?? "error" };
   }
   return { schema: entry as SchemaLike<T>, severity: "error" };
@@ -368,9 +382,9 @@ function runSchemaValidation<T>(
     } catch (err: unknown) {
       // Try to extract structured issues from the error
       
-      const errAny = err as any;
-      if (errAny?.issues && Array.isArray(errAny.issues)) {
-        issues = errAny.issues.map(
+      const errObj = err as { issues?: Array<{ message?: string; path?: Array<string | number> }> };
+      if (errObj?.issues && Array.isArray(errObj.issues)) {
+        issues = errObj.issues.map(
           (i: { message?: string; path?: Array<string | number> }) => ({
             message: i.message ?? String(i),
             ...(i.path && { path: i.path }),
@@ -782,7 +796,7 @@ let httpErrorTotal = 0;
 
 // Captured in beforeRequest when emitFullTrace is on
 
-let lastRequestBody: any = undefined;
+let lastRequestBody: unknown = undefined;
 
 /** Max serialized body size (chars) to include in trace events. */
 const TRACE_BODY_MAX_SIZE = 1_048_576; // 1MB
@@ -793,7 +807,7 @@ const TRACE_BODY_MAX_SIZE = 1_048_576; // 1MB
  * so the trace file stays valid JSON and diffable.
  */
 
-function truncateBody(body: any): any {
+function truncateBody(body: unknown): unknown {
   try {
     const json = JSON.stringify(body);
     if (json.length <= TRACE_BODY_MAX_SIZE) return body;
@@ -1099,17 +1113,17 @@ const kyInstance = ky.create({
   hooks: {
     beforeRequest: [
       
-      (_request: Request, options: any) => {
+      (_request: Request, options: NormalizedOptions) => {
         lastRequestStartTime = performance.now();
         if (emitFullTrace) {
           // Capture request body from ky options before the request is sent
-          lastRequestBody = options.json ?? options.body ?? undefined;
+          lastRequestBody = (options as unknown as Record<string, unknown>).json ?? options.body ?? undefined;
         }
       },
     ],
     afterResponse: [
       
-      async (request: Request, _options: any, response: Response) => {
+      async (request: Request, _options: NormalizedOptions, response: Response) => {
         const duration = Math.round(performance.now() - lastRequestStartTime);
 
         // Increment HTTP counters for summary
@@ -1120,7 +1134,7 @@ const kyInstance = ky.create({
 
         // Build trace data — enriched when emitFullTrace is on
         
-        const traceData: Record<string, any> = {
+        const traceData: Record<string, unknown> = {
           method: request.method,
           url: request.url,
           status: response.status,
@@ -1164,7 +1178,7 @@ const kyInstance = ky.create({
           lastRequestBody = undefined;
         }
 
-        ctx.trace(traceData as ApiTrace);
+        ctx.trace(traceData as unknown as ApiTrace);
 
         // Auto-metric for response time
         try {
@@ -1207,7 +1221,9 @@ function normalizeUrl(input: string | URL | Request): string | URL | Request {
  * - Remove empty searchParams to prevent ky from appending bare '?'
  */
 
-function normalizeOptions(options?: any): any {
+type KyOptionsWithSchema = KyOptions & { schema?: HttpSchemaOptions };
+
+function normalizeOptions(options?: KyOptionsWithSchema): KyOptionsWithSchema | undefined {
   if (!options) return options;
   const normalized = { ...options };
   // Remove empty searchParams so ky doesn't append a bare '?'
@@ -1236,7 +1252,7 @@ function normalizeOptions(options?: any): any {
  * Extracts schema option from the options object.
  */
 
-function runPreRequestSchemaValidation(options?: any): void {
+function runPreRequestSchemaValidation(options?: KyOptionsWithSchema): void {
   const schemaOpts = options?.schema as HttpSchemaOptions | undefined;
   if (!schemaOpts) return;
 
@@ -1259,20 +1275,20 @@ function runPreRequestSchemaValidation(options?: any): void {
  */
 function wrapResponseWithSchema(
   
-  responsePromise: any,
+  responsePromise: ReturnType<KyInstance["get"]>,
   schemaOpts?: HttpSchemaOptions,
-  
-): any {
+
+): ReturnType<KyInstance["get"]> {
   if (!schemaOpts?.response) return responsePromise;
 
   const { schema, severity } = resolveSchemaEntry(schemaOpts.response);
 
-  // Wrap the .json() method to validate after parsing
+  // Wrap the .json() method to validate after parsing (monkey-patch requires cast)
   const originalJson = responsePromise.json.bind(responsePromise);
-  responsePromise.json = async () => {
+  (responsePromise as { json: typeof originalJson }).json = async <J = unknown>() => {
     const body = await originalJson();
     runSchemaValidation(body, schema, "response body", severity);
-    return body;
+    return body as J;
   };
 
   return responsePromise;
@@ -1286,23 +1302,21 @@ function wrapResponseWithSchema(
  * 4. Schema validation runs on request/response when `schema` option is provided
  */
 
-function wrapKy(instance: any): any {
+type KyFn = (input: string | URL | Request, options?: KyOptions) => ReturnType<KyInstance["get"]>;
+
+function wrapKy(instance: KyInstance): Record<string, unknown> {
   const methods = ["get", "post", "put", "patch", "delete", "head"] as const;
 
   function callWithSchema(
-    
-    kyFn: (...args: any[]) => any,
-    
-    input: any,
-    
-    options?: any,
+    kyFn: KyFn,
+    input: string | URL | Request,
+    options?: KyOptionsWithSchema,
   ) {
     const normalized = normalizeOptions(options);
     // Run pre-request validations (query, request body)
     runPreRequestSchemaValidation(normalized);
     // Strip schema option before passing to ky (ky doesn't know about it)
-    
-    let kyOptions: any;
+    let kyOptions: KyOptions | undefined;
     if (normalized?.schema) {
       const { schema: _schema, ...rest } = normalized;
       kyOptions = rest;
@@ -1314,25 +1328,26 @@ function wrapKy(instance: any): any {
   }
 
   // The callable + methods wrapper
-  
-  const wrapped: Record<string, any> = function (input: any, options?: any) {
-    return callWithSchema(instance, input, options);
+  const baseFn = (input: string | URL | Request, options?: KyOptionsWithSchema) => {
+    return callWithSchema(instance as unknown as KyFn, input, options);
   };
+  const wrapped = baseFn as unknown as Record<string, unknown>;
 
   for (const method of methods) {
-    
-    wrapped[method] = (input: any, options?: any) => callWithSchema(instance[method].bind(instance), input, options);
+    wrapped[method] = (input: string | URL | Request, options?: KyOptionsWithSchema) =>
+      callWithSchema(instance[method].bind(instance) as KyFn, input, options);
   }
 
-  
-  wrapped.extend = (options?: any) => wrapKy(instance.extend(normalizeOptions(options)));
+  wrapped.extend = (options?: KyOptionsWithSchema) =>
+    wrapKy(instance.extend(normalizeOptions(options) as KyOptions));
 
   return wrapped;
 }
 
 // Attach wrapped http client to ctx
 
-(ctx as any).http = wrapKy(kyInstance);
+const wrappedHttp = wrapKy(kyInstance);
+(ctx as unknown as { http: Record<string, unknown> }).http = wrappedHttp;
 
 // Set global runtime slot for configure() API.
 // configure() returns lazy getters that read from this slot at test execution time.
@@ -1356,11 +1371,10 @@ function withEnvFallback(
 }
 
 
-(globalThis as any).__glubeanRuntime = {
+globalThis.__glubeanRuntime = {
   vars: withEnvFallback(rawVars),
   secrets: withEnvFallback(rawSecrets),
-  
-  http: (ctx as any).http,
+  http: wrappedHttp,
   test: runtimeTest,
   action: ctx.action,
   event: ctx.event,
@@ -1514,7 +1528,7 @@ try {
       } catch (error) {
         emitSummary();
         if (error instanceof SkipError) {
-          console.log(JSON.stringify({ type: "status", status: "skipped", id: resolved.id, reason: (error as any).reason }));
+          console.log(JSON.stringify({ type: "status", status: "skipped", id: resolved.id, reason: (error as SkipError).reason }));
         } else {
           hasFailure = true;
           console.log(JSON.stringify({ type: "status", status: "failed", id: resolved.id, error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined }));
@@ -1586,19 +1600,20 @@ import { findTestByExport, findTestById, resolveModuleTests } from "./resolve.js
  * - 1 → simple factory: `(ctx) => instance`
  * - 2 → lifecycle factory: `(ctx, use) => { setup; await use(instance); cleanup }`
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FixtureFactory = (ctx: TestContext, use?: (value: any) => Promise<void>) => any;
+
 async function withFixtures(
   
-  fixtures: Record<string, (...args: any[]) => any>,
+  fixtures: Record<string, FixtureFactory>,
   baseCtx: TestContext,
   runTest: (ctx: TestContext) => Promise<void>,
 ): Promise<void> {
   // Prototype-linked copy: core ctx fields (vars, secrets, http, ...) remain accessible
   const augmented = Object.create(baseCtx) as TestContext;
 
-  
-  const simple: [string, (...args: any[]) => any][] = [];
-  
-  const lifecycle: [string, (...args: any[]) => any][] = [];
+  const simple: [string, FixtureFactory][] = [];
+  const lifecycle: [string, FixtureFactory][] = [];
 
   for (const [key, fn] of Object.entries(fixtures)) {
     if (fn.length >= 2) {
@@ -1675,7 +1690,7 @@ async function executeNewTest(test: Test<unknown>): Promise<void> {
   const testTags = normalizeTestTags(test.meta.tags);
   // Keep runtime metadata aligned with the actual resolved test before user code runs.
   
-  (globalThis as any).__glubeanRuntime.test = {
+  globalThis.__glubeanRuntime.test = {
     id: test.meta.id,
     tags: testTags,
   };
@@ -1913,7 +1928,7 @@ async function executeNewTest(test: Test<unknown>): Promise<void> {
 
     // Resolve test.extend() fixtures (if any) and run the test body
     if (test.fixtures && Object.keys(test.fixtures).length > 0) {
-      await withFixtures(test.fixtures, ctx, runTestBody);
+      await withFixtures(test.fixtures as Record<string, FixtureFactory>, ctx, runTestBody);
     } else {
       await runTestBody(ctx);
     }
