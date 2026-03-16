@@ -82,6 +82,7 @@ export interface UploadResultPayload {
     tags?: string[];
     events?: unknown[];
   }>;
+  customMetadata?: Record<string, string>;
   metadata?: {
     schemaVersion: string;
     generatedBy: string;
@@ -207,6 +208,7 @@ export async function uploadToCloud(
     summary: resultPayload.summary,
     tests: resultPayload.tests,
     ...(resultPayload.metadata && { metadata: resultPayload.metadata }),
+    ...(resultPayload.customMetadata && { customMetadata: resultPayload.customMetadata }),
   };
 
   let runId: string;

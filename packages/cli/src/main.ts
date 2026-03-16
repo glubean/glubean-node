@@ -86,6 +86,7 @@ program
   .option("--trace-limit <count>", "Max trace files to keep per test (default: 20)")
   .option("--ci", "CI mode: enables --fail-fast and --reporter junit")
   .option("--no-session", "Skip session setup/teardown")
+  .option("-M, --meta <key=value>", "Custom run metadata (repeatable)", collect, [])
   .option("--upload", "Upload run results and artifacts to Glubean Cloud")
   .option("--project <id>", "Glubean Cloud project ID (or GLUBEAN_PROJECT_ID env)")
   .option("--token <token>", "Auth token for cloud upload (or GLUBEAN_TOKEN env)")
@@ -139,6 +140,13 @@ program
       reporterPath,
       traceLimit: options.traceLimit ? parseInt(options.traceLimit, 10) : undefined,
       noSession: options.noSession,
+      meta: options.meta?.length
+        ? (options.meta as string[]).reduce((acc: Record<string, string>, item: string) => {
+            const eq = item.indexOf("=");
+            if (eq > 0) acc[item.slice(0, eq)] = item.slice(eq + 1);
+            return acc;
+          }, {})
+        : undefined,
       upload: options.upload,
       project: options.project,
       token: options.token,

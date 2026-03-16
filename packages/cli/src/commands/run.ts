@@ -62,6 +62,7 @@ interface RunOptions {
   token?: string;
   apiUrl?: string;
   noSession?: boolean;
+  meta?: Record<string, string>;
 }
 
 interface CollectedTestRun {
@@ -1224,6 +1225,7 @@ export async function runCommand(
       events: r.events,
     })),
     ...(thresholdSummary && { thresholds: thresholdSummary }),
+    ...(options.meta && Object.keys(options.meta).length > 0 && { customMetadata: options.meta }),
   };
   const resultJson = JSON.stringify(resultPayload, null, 2);
 
