@@ -1,19 +1,29 @@
 import type { ConfigureHttpOptions } from "@glubean/sdk";
 
+export interface BearerOptions {
+  /** Base URL — literal or `{{VAR}}` reference */
+  prefixUrl: string;
+  /** Bearer token — literal or `{{SECRET}}` reference */
+  token: string;
+}
+
 /**
  * Bearer token authentication.
  *
- * @param prefixUrlVar - Var key for the base URL
- * @param tokenSecret - Secret key for the bearer token
+ * @example
+ * ```ts
+ * // Reference from .env.secrets
+ * bearer({ prefixUrl: "{{BASE_URL}}", token: "{{API_TOKEN}}" })
+ *
+ * // Hardcoded (quick prototyping)
+ * bearer({ prefixUrl: "https://api.example.com", token: "sk-xxx" })
+ * ```
  */
-export function bearer(
-  prefixUrlVar: string,
-  tokenSecret: string,
-): ConfigureHttpOptions {
+export function bearer(opts: BearerOptions): ConfigureHttpOptions {
   return {
-    prefixUrl: prefixUrlVar,
+    prefixUrl: opts.prefixUrl,
     headers: {
-      Authorization: `Bearer {{${tokenSecret}}}`,
+      Authorization: `Bearer ${opts.token}`,
     },
   };
 }

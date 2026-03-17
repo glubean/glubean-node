@@ -3,18 +3,28 @@ import type { ConfigureHttpOptions, HttpRequestOptions } from "@glubean/sdk";
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface OAuth2ClientCredentialsOptions {
+  /** Base URL — literal or `{{VAR}}` reference */
   prefixUrl: string;
+  /** Token endpoint URL — literal or `{{VAR}}` reference */
   tokenUrl: string;
+  /** Client ID — literal or `{{SECRET}}` reference */
   clientId: string;
+  /** Client secret — literal or `{{SECRET}}` reference */
   clientSecret: string;
+  /** OAuth2 scope (optional) */
   scope?: string;
 }
 
 export interface OAuth2RefreshTokenOptions {
+  /** Base URL — literal or `{{VAR}}` reference */
   prefixUrl: string;
+  /** Token endpoint URL — literal or `{{VAR}}` reference */
   tokenUrl: string;
+  /** Refresh token — literal or `{{SECRET}}` reference */
   refreshToken: string;
+  /** Client ID — literal or `{{SECRET}}` reference */
   clientId: string;
+  /** Client secret — literal or `{{SECRET}}` reference (optional) */
   clientSecret?: string;
 }
 
@@ -51,9 +61,9 @@ function clientCredentials(opts: OAuth2ClientCredentialsOptions): ConfigureHttpO
   return {
     prefixUrl: opts.prefixUrl,
     headers: {
-      [TOKEN_URL_H]: `{{${opts.tokenUrl}}}`,
-      [CLIENT_ID_H]: `{{${opts.clientId}}}`,
-      [CLIENT_SECRET_H]: `{{${opts.clientSecret}}}`,
+      [TOKEN_URL_H]: opts.tokenUrl,
+      [CLIENT_ID_H]: opts.clientId,
+      [CLIENT_SECRET_H]: opts.clientSecret,
     },
     hooks: {
       beforeRequest: [
@@ -100,11 +110,11 @@ function refreshToken(opts: OAuth2RefreshTokenOptions): ConfigureHttpOptions {
   let accessToken: string | null = null;
 
   const headers: Record<string, string> = {
-    [TOKEN_URL_H]: `{{${opts.tokenUrl}}}`,
-    [REFRESH_TOKEN_H]: `{{${opts.refreshToken}}}`,
-    [CLIENT_ID_H]: `{{${opts.clientId}}}`,
+    [TOKEN_URL_H]: opts.tokenUrl,
+    [REFRESH_TOKEN_H]: opts.refreshToken,
+    [CLIENT_ID_H]: opts.clientId,
   };
-  if (opts.clientSecret) headers[CLIENT_SECRET_H] = `{{${opts.clientSecret}}}`;
+  if (opts.clientSecret) headers[CLIENT_SECRET_H] = opts.clientSecret;
 
   const allMarkers = [TOKEN_URL_H, REFRESH_TOKEN_H, CLIENT_ID_H, CLIENT_SECRET_H];
 

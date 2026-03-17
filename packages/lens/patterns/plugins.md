@@ -17,18 +17,18 @@ Glubean plugins extend `configure()` with additional capabilities. Each plugin i
 
 Shortcuts for common auth patterns. Returns `ConfigureHttpOptions` — pass directly to `configure({ http: ... })`.
 
+All values support `{{KEY}}` references (resolved from .env / .env.secrets) or literal strings.
+
 ### Bearer token
 
 ```typescript
 import { configure } from "@glubean/sdk";
 import { bearer } from "@glubean/auth";
 
-// .env.secrets: API_TOKEN=sk_xxx
 export const { http: api } = configure({
-  secrets: { token: "API_TOKEN" },
-  http: bearer("BASE_URL", "API_TOKEN"),
+  http: bearer({ prefixUrl: "{{BASE_URL}}", token: "{{API_TOKEN}}" }),
 });
-// Every request gets: Authorization: Bearer sk_xxx
+// Every request gets: Authorization: Bearer <resolved value>
 ```
 
 ### API key (header)
@@ -37,8 +37,7 @@ export const { http: api } = configure({
 import { apiKey } from "@glubean/auth";
 
 export const { http: api } = configure({
-  secrets: { key: "API_KEY" },
-  http: apiKey("BASE_URL", "X-Api-Key", "API_KEY"),
+  http: apiKey({ prefixUrl: "{{BASE_URL}}", param: "X-Api-Key", value: "{{API_KEY}}" }),
 });
 // Every request gets header: X-Api-Key: <value>
 ```
@@ -49,8 +48,7 @@ export const { http: api } = configure({
 import { apiKey } from "@glubean/auth";
 
 export const { http: api } = configure({
-  secrets: { key: "API_KEY" },
-  http: apiKey("BASE_URL", "apiKey", "API_KEY", "query"),
+  http: apiKey({ prefixUrl: "{{BASE_URL}}", param: "apiKey", value: "{{API_KEY}}", location: "query" }),
 });
 // Every request gets: ?apiKey=<value>
 ```
@@ -61,8 +59,7 @@ export const { http: api } = configure({
 import { basicAuth } from "@glubean/auth";
 
 export const { http: api } = configure({
-  secrets: { user: "USERNAME", pass: "PASSWORD" },
-  http: basicAuth("BASE_URL", "USERNAME", "PASSWORD"),
+  http: basicAuth({ prefixUrl: "{{BASE_URL}}", username: "{{USER}}", password: "{{PASS}}" }),
 });
 // Every request gets: Authorization: Basic base64(user:pass)
 ```
@@ -73,12 +70,11 @@ export const { http: api } = configure({
 import { oauth2 } from "@glubean/auth";
 
 export const { http: api } = configure({
-  secrets: { id: "CLIENT_ID", secret: "CLIENT_SECRET" },
   http: oauth2.clientCredentials({
-    prefixUrl: "BASE_URL",
-    tokenUrl: "OAUTH_TOKEN_URL",      // Secret key for token endpoint
-    clientId: "CLIENT_ID",
-    clientSecret: "CLIENT_SECRET",
+    prefixUrl: "{{BASE_URL}}",
+    tokenUrl: "{{OAUTH_TOKEN_URL}}",
+    clientId: "{{CLIENT_ID}}",
+    clientSecret: "{{CLIENT_SECRET}}",
     scope: "read write",              // Optional
   }),
 });
@@ -91,13 +87,12 @@ export const { http: api } = configure({
 import { oauth2 } from "@glubean/auth";
 
 export const { http: api } = configure({
-  secrets: { refresh: "REFRESH_TOKEN", id: "CLIENT_ID" },
   http: oauth2.refreshToken({
-    prefixUrl: "BASE_URL",
-    tokenUrl: "OAUTH_TOKEN_URL",
-    refreshToken: "REFRESH_TOKEN",
-    clientId: "CLIENT_ID",
-    clientSecret: "CLIENT_SECRET",    // Optional
+    prefixUrl: "{{BASE_URL}}",
+    tokenUrl: "{{OAUTH_TOKEN_URL}}",
+    refreshToken: "{{REFRESH_TOKEN}}",
+    clientId: "{{CLIENT_ID}}",
+    clientSecret: "{{CLIENT_SECRET}}",    // Optional
   }),
 });
 // Auto-refreshes on 401
@@ -122,6 +117,29 @@ export const protectedTest = test("protected")
     ctx.expect(res.id).toBeDefined();
   });
 ```
+
+### Combining auth strategies
+
+When mixing `apiKey()` with custom headers, extract the base config and spread its `headers`:
+
+```typescript
+import { configure } from "@glubean/sdk";
+import { apiKey } from "@glubean/auth";
+
+const base = apiKey({ prefixUrl: "{{BASE_URL}}", param: "apiKey", value: "{{API_KEY}}", location: "query" });
+
+export const { http } = configure({
+  http: {
+    ...base,
+    headers: {
+      ...base.headers,   // ← preserve plugin's internal headers
+      Authorization: "Bearer {{TOKEN}}",
+    },
+  },
+});
+```
+
+> **Why?** `apiKey({ location: "query" })` and `basicAuth()` use marker headers + beforeRequest hooks internally. Overwriting `headers` without spreading `base.headers` drops the marker and the hook silently does nothing.
 
 ---
 

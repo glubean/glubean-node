@@ -1,26 +1,32 @@
 import type { ConfigureHttpOptions } from "@glubean/sdk";
 
+export interface BasicAuthOptions {
+  /** Base URL — literal or `{{VAR}}` reference */
+  prefixUrl: string;
+  /** Username — literal or `{{SECRET}}` reference */
+  username: string;
+  /** Password — literal or `{{SECRET}}` reference */
+  password: string;
+}
+
 const MARKER = "X-Glubean-Basic-Auth";
 
 /**
  * HTTP Basic authentication.
  *
  * Uses a beforeRequest hook to compute `Authorization: Basic base64(user:pass)`
- * from resolved secret values.
+ * from resolved values.
  *
- * @param prefixUrlVar - Var key for the base URL
- * @param usernameSecret - Secret key for the username
- * @param passwordSecret - Secret key for the password
+ * @example
+ * ```ts
+ * basicAuth({ prefixUrl: "{{BASE_URL}}", username: "{{USER}}", password: "{{PASS}}" })
+ * ```
  */
-export function basicAuth(
-  prefixUrlVar: string,
-  usernameSecret: string,
-  passwordSecret: string,
-): ConfigureHttpOptions {
+export function basicAuth(opts: BasicAuthOptions): ConfigureHttpOptions {
   return {
-    prefixUrl: prefixUrlVar,
+    prefixUrl: opts.prefixUrl,
     headers: {
-      [MARKER]: `{{${usernameSecret}}}:{{${passwordSecret}}}`,
+      [MARKER]: `${opts.username}:${opts.password}`,
     },
     hooks: {
       beforeRequest: [
