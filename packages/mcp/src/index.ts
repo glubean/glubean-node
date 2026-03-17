@@ -1040,7 +1040,7 @@ server.registerTool(
   },
 );
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("glubean MCP server running (stdio)");
@@ -1050,7 +1050,8 @@ async function main(): Promise<void> {
 const isMain = process.argv[1] && (
   process.argv[1].endsWith("/mcp.js") ||
   process.argv[1].endsWith("/index.js") ||
-  process.argv[1].includes("@glubean/mcp")
+  process.argv[1].includes("@glubean/mcp") ||
+  process.argv[1].endsWith("/glubean-mcp")
 );
 if (isMain) {
   main();

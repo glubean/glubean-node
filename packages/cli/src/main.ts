@@ -23,6 +23,7 @@ import { patchCommand } from "./commands/patch.js";
 import { specSplitCommand } from "./commands/spec_split.js";
 import { workerCommand } from "./commands/worker.js";
 import { redactCommand } from "./commands/redact.js";
+import { configMcpCommand } from "./commands/config_mcp.js";
 import { abortUpdateCheck, checkForUpdates } from "./update_check.js";
 
 const program = new Command();
@@ -339,6 +340,25 @@ program
       output: options.output,
       stdout: options.stdout,
       config: configFiles,
+    });
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// config command (with subcommands)
+// ─────────────────────────────────────────────────────────────────────────────
+const configCmd = program
+  .command("config")
+  .description("Configuration tools");
+
+configCmd
+  .command("mcp")
+  .description("Configure MCP server for AI coding tools (Claude Code, Cursor, Windsurf)")
+  .option("--target <tool>", "AI tool: claude-code, codex, cursor, or windsurf")
+  .option("--remove", "Remove MCP server configuration")
+  .action(async (options) => {
+    await configMcpCommand({
+      target: options.target as "claude-code" | "cursor" | "windsurf" | undefined,
+      remove: options.remove,
     });
   });
 

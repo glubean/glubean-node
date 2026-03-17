@@ -7,12 +7,12 @@
 
 ## Version Policy
 
-### Core packages (versions must be aligned)
+### Core packages (minor-aligned, patch independent)
 sdk, scanner, redaction, runner, cli
 
-- **All core packages share the same version number.** Always bump them together.
+- **All core packages share the same minor version** (currently `0.1`). Patch versions are independent — only bump the package(s) you changed.
 - Pre-launch: PATCH only (`0.1.x`).
-- Bump command: `pnpm --filter @glubean/sdk --filter @glubean/scanner --filter @glubean/redaction --filter @glubean/runner --filter @glubean/cli exec -- npm version 0.1.X --no-git-tag-version`
+- Bump command (example): `pnpm --filter @glubean/cli exec -- npm version 0.1.X --no-git-tag-version`
 
 ### Plugin packages (versioned independently)
 auth, browser, graphql, mcp
