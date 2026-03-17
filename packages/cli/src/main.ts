@@ -25,6 +25,7 @@ import { workerCommand } from "./commands/worker.js";
 import { redactCommand } from "./commands/redact.js";
 import { configMcpCommand } from "./commands/config_mcp.js";
 import { configSkillCommand } from "./commands/config_skill.js";
+import { docsPullCommand } from "./commands/docs_pull.js";
 import { abortUpdateCheck, checkForUpdates } from "./update_check.js";
 
 const program = new Command();
@@ -373,6 +374,21 @@ configCmd
       target: options.target as "claude-code" | "codex" | "cursor" | undefined,
       remove: options.remove,
     });
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// docs command
+// ─────────────────────────────────────────────────────────────────────────────
+const docsCmd = program
+  .command("docs")
+  .description("Manage SDK documentation for AI agents");
+
+docsCmd
+  .command("pull")
+  .description("Download @glubean/lens (SDK reference + patterns) to .glubean/docs/")
+  .option("--dir <path>", "Project root directory")
+  .action(async (options) => {
+    await docsPullCommand({ dir: options.dir });
   });
 
 // ─────────────────────────────────────────────────────────────────────────────
