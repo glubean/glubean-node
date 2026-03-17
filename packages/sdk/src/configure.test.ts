@@ -83,24 +83,33 @@ test("configure() - can be called without options", () => {
 // Lazy vars
 // =============================================================================
 
-test("vars - lazy getter reads from runtime slot", () => {
+test("vars - {{key}} resolves from runtime vars", () => {
   const cleanup = setRuntime({ base_url: "https://api.example.com" });
   try {
-    const { vars } = configure({ vars: { baseUrl: "base_url" } });
+    const { vars } = configure({ vars: { baseUrl: "{{base_url}}" } });
     expect(vars.baseUrl).toBe("https://api.example.com");
   } finally {
     cleanup();
   }
 });
 
-test("vars - multiple properties", () => {
+test("vars - literal value (no {{}}) returned as-is", () => {
+  const cleanup = setRuntime({});
+  try {
+    const { vars } = configure({ vars: { baseUrl: "https://api.example.com" } });
+    expect(vars.baseUrl).toBe("https://api.example.com");
+  } finally {
+    cleanup();
+  }
+});
+
+test("vars - multiple properties with mixed literal and {{ref}}", () => {
   const cleanup = setRuntime({
     base_url: "https://api.example.com",
-    org_id: "org-123",
   });
   try {
     const { vars } = configure({
-      vars: { baseUrl: "base_url", orgId: "org_id" },
+      vars: { baseUrl: "{{base_url}}", orgId: "org-123" },
     });
     expect(vars.baseUrl).toBe("https://api.example.com");
     expect(vars.orgId).toBe("org-123");
@@ -109,25 +118,13 @@ test("vars - multiple properties", () => {
   }
 });
 
-test("vars - throws on missing var", () => {
+test("vars - throws on missing {{ref}}", () => {
   const cleanup = setRuntime({ other_var: "value" });
   try {
-    const { vars } = configure({ vars: { baseUrl: "base_url" } });
+    const { vars } = configure({ vars: { baseUrl: "{{base_url}}" } });
     expect(
       () => vars.baseUrl,
-    ).toThrow("Missing required var: base_url");
-  } finally {
-    cleanup();
-  }
-});
-
-test("vars - throws on empty string var", () => {
-  const cleanup = setRuntime({ base_url: "" });
-  try {
-    const { vars } = configure({ vars: { baseUrl: "base_url" } });
-    expect(
-      () => vars.baseUrl,
-    ).toThrow("Missing required var: base_url");
+    ).toThrow('Missing value for template placeholder "{{base_url}}"');
   } finally {
     cleanup();
   }
@@ -135,7 +132,7 @@ test("vars - throws on empty string var", () => {
 
 test("vars - throws when accessed without runtime (scan time)", () => {
   clearRuntime();
-  const { vars } = configure({ vars: { baseUrl: "base_url" } });
+  const { vars } = configure({ vars: { baseUrl: "{{base_url}}" } });
   expect(
     () => vars.baseUrl,
   ).toThrow("configure() values can only be accessed during test execution");
@@ -145,7 +142,7 @@ test("vars - properties are enumerable", () => {
   const cleanup = setRuntime({ base_url: "https://example.com" });
   try {
     const { vars } = configure({
-      vars: { baseUrl: "base_url", orgId: "org_id" },
+      vars: { baseUrl: "{{base_url}}", orgId: "org-456" },
     });
     const keys = Object.keys(vars);
     expect(keys.sort()).toEqual(["baseUrl", "orgId"]);
@@ -157,7 +154,7 @@ test("vars - properties are enumerable", () => {
 test("vars - re-reads from runtime on each access (not cached)", () => {
   const cleanup = setRuntime({ base_url: "https://v1.example.com" });
   try {
-    const { vars } = configure({ vars: { baseUrl: "base_url" } });
+    const { vars } = configure({ vars: { baseUrl: "{{base_url}}" } });
     expect(vars.baseUrl).toBe("https://v1.example.com");
 
     // Simulate a new test execution with different vars
@@ -173,35 +170,33 @@ test("vars - re-reads from runtime on each access (not cached)", () => {
 // Lazy secrets
 // =============================================================================
 
-test("secrets - lazy getter reads from runtime slot", () => {
+test("secrets - {{key}} resolves from runtime secrets", () => {
   const cleanup = setRuntime({}, { api_key: "sk-test-123" });
   try {
-    const { secrets } = configure({ secrets: { apiKey: "api_key" } });
+    const { secrets } = configure({ secrets: { apiKey: "{{api_key}}" } });
     expect(secrets.apiKey).toBe("sk-test-123");
   } finally {
     cleanup();
   }
 });
 
-test("secrets - throws on missing secret", () => {
+test("secrets - literal value returned as-is", () => {
   const cleanup = setRuntime({}, {});
   try {
-    const { secrets } = configure({ secrets: { apiKey: "api_key" } });
-    expect(
-      () => secrets.apiKey,
-    ).toThrow("Missing required secret: api_key");
+    const { secrets } = configure({ secrets: { apiKey: "sk-hardcoded-456" } });
+    expect(secrets.apiKey).toBe("sk-hardcoded-456");
   } finally {
     cleanup();
   }
 });
 
-test("secrets - throws on empty string secret", () => {
-  const cleanup = setRuntime({}, { api_key: "" });
+test("secrets - throws on missing {{ref}}", () => {
+  const cleanup = setRuntime({}, {});
   try {
-    const { secrets } = configure({ secrets: { apiKey: "api_key" } });
+    const { secrets } = configure({ secrets: { apiKey: "{{api_key}}" } });
     expect(
       () => secrets.apiKey,
-    ).toThrow("Missing required secret: api_key");
+    ).toThrow('Missing value for template placeholder "{{api_key}}"');
   } finally {
     cleanup();
   }
@@ -209,7 +204,7 @@ test("secrets - throws on empty string secret", () => {
 
 test("secrets - throws when accessed without runtime", () => {
   clearRuntime();
-  const { secrets } = configure({ secrets: { apiKey: "api_key" } });
+  const { secrets } = configure({ secrets: { apiKey: "{{api_key}}" } });
   expect(
     () => secrets.apiKey,
   ).toThrow("configure() values can only be accessed during test execution");
@@ -502,8 +497,8 @@ test("full configure - vars, secrets, and http work together", () => {
   );
   try {
     const { vars, secrets, http } = configure({
-      vars: { baseUrl: "base_url", orgId: "org_id" },
-      secrets: { apiKey: "api_key" },
+      vars: { baseUrl: "{{base_url}}", orgId: "{{org_id}}" },
+      secrets: { apiKey: "{{api_key}}" },
       http: {
         prefixUrl: "{{base_url}}",
         headers: {
@@ -540,8 +535,8 @@ test("configure() itself does not throw without runtime", () => {
   clearRuntime();
   // configure() should succeed — only accessing the returned values should throw
   const result = configure({
-    vars: { baseUrl: "base_url" },
-    secrets: { apiKey: "api_key" },
+    vars: { baseUrl: "{{base_url}}" },
+    secrets: { apiKey: "{{api_key}}" },
     http: { prefixUrl: "{{base_url}}" },
   });
   expect(typeof result.vars).toBe("object");
@@ -560,11 +555,11 @@ test("multiple configure calls are independent", () => {
   );
   try {
     const config1 = configure({
-      vars: { baseUrl: "base_url" },
+      vars: { baseUrl: "{{base_url}}" },
     });
     const config2 = configure({
-      vars: { debug: "debug" },
-      secrets: { apiKey: "api_key" },
+      vars: { debug: "{{debug}}" },
+      secrets: { apiKey: "{{api_key}}" },
     });
 
     expect(config1.vars.baseUrl).toBe("https://api.example.com");
@@ -888,8 +883,8 @@ test("configure({ plugins }) - returns plugin instances alongside vars/secrets/h
   );
   try {
     const result = configure({
-      vars: { baseUrl: "base_url" },
-      secrets: { apiKey: "api_key" },
+      vars: { baseUrl: "{{base_url}}" },
+      secrets: { apiKey: "{{api_key}}" },
       http: { prefixUrl: "{{base_url}}" },
       plugins: {
         myClient: definePlugin((runtime) => ({
@@ -942,7 +937,7 @@ test("configure() without plugins - works as before", () => {
   const cleanup = setRuntime({ base_url: "https://api.example.com" }, {});
   try {
     const result = configure({
-      vars: { baseUrl: "base_url" },
+      vars: { baseUrl: "{{base_url}}" },
     });
     expect(result.vars.baseUrl).toBe("https://api.example.com");
   } finally {

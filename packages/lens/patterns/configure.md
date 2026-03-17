@@ -28,12 +28,12 @@ In code, use `{{KEY}}` to reference values from either file — the SDK resolves
 import { configure } from "@glubean/sdk";
 
 export const { http: api, vars, secrets } = configure({
-  vars: { user: "GITHUB_USER" },       // .env → property mapping
-  secrets: { token: "API_KEY" },        // .env.secrets → property mapping
+  vars: { user: "{{GITHUB_USER}}" },        // {{KEY}} → resolved from .env
+  secrets: { token: "{{API_KEY}}" },         // {{KEY}} → resolved from .env.secrets
   http: {
-    prefixUrl: "{{BASE_URL}}",         // {{KEY}} = resolve from .env or .env.secrets
+    prefixUrl: "{{BASE_URL}}",              // {{KEY}} → resolved at runtime
     headers: {
-      Authorization: "Bearer {{API_KEY}}",  // {{KEY}} from .env.secrets
+      Authorization: "Bearer {{API_KEY}}",  // {{KEY}} → resolved from .env.secrets
       Accept: "application/json",
     },
     timeout: 15000,
@@ -53,6 +53,32 @@ GITHUB_USER=glubean
 API_KEY=sk_live_xxx
 ```
 
+## Quick prototyping — literal values
+
+All values support literal strings too. Skip `.env` files when you just want to try something:
+
+```typescript
+export const { http: api } = configure({
+  http: {
+    prefixUrl: "https://api.example.com",    // literal URL
+    headers: {
+      Authorization: "Bearer sk-test-123",   // literal token (don't commit this!)
+    },
+  },
+});
+```
+
+You can also mix:
+
+```typescript
+export const { http: api, vars } = configure({
+  vars: { baseUrl: "{{BASE_URL}}", debugMode: "true" },  // ref + literal
+  http: { prefixUrl: "{{BASE_URL}}" },
+});
+```
+
+**Rule:** `{{KEY}}` = resolve from .env/.env.secrets at runtime. No `{{}}` = literal value.
+
 ## Public + Authenticated clients (same API, different auth)
 
 ```typescript
@@ -62,9 +88,9 @@ import { configure } from "@glubean/sdk";
 // Public — no token needed
 export const { http: githubApi, vars: githubVars } = configure({
   vars: {
-    user: "GITHUB_USER",
-    repo: "GITHUB_REPO",
-    searchQuery: "GITHUB_SEARCH_QUERY",
+    user: "{{GITHUB_USER}}",
+    repo: "{{GITHUB_REPO}}",
+    searchQuery: "{{GITHUB_SEARCH_QUERY}}",
   },
   http: {
     prefixUrl: "{{GITHUB_API}}",
@@ -74,7 +100,7 @@ export const { http: githubApi, vars: githubVars } = configure({
 
 // Authenticated — requires GITHUB_TOKEN in .env.secrets
 export const { http: githubAuthApi } = configure({
-  secrets: { token: "GITHUB_TOKEN" },
+  secrets: { token: "{{GITHUB_TOKEN}}" },
   http: {
     prefixUrl: "{{GITHUB_API}}",
     headers: {

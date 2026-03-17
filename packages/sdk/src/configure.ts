@@ -159,10 +159,11 @@ function buildLazyVars<V extends Record<string, string>>(
   mapping: Record<string, string>,
 ): Readonly<V> {
   const obj = {} as Record<string, string>;
-  for (const [prop, varKey] of Object.entries(mapping)) {
+  for (const [prop, value] of Object.entries(mapping)) {
     Object.defineProperty(obj, prop, {
       get() {
-        return requireVar(varKey);
+        const runtime = getRuntime();
+        return resolveTemplate(value, runtime.vars, runtime.secrets);
       },
       enumerable: true,
       configurable: false,
@@ -181,10 +182,11 @@ function buildLazySecrets<S extends Record<string, string>>(
   mapping: Record<string, string>,
 ): Readonly<S> {
   const obj = {} as Record<string, string>;
-  for (const [prop, secretKey] of Object.entries(mapping)) {
+  for (const [prop, value] of Object.entries(mapping)) {
     Object.defineProperty(obj, prop, {
       get() {
-        return requireSecret(secretKey);
+        const runtime = getRuntime();
+        return resolveTemplate(value, runtime.vars, runtime.secrets);
       },
       enumerable: true,
       configurable: false,
