@@ -78,6 +78,12 @@ importers:
         specifier: ^22.0.0
         version: 22.19.15
 
+  packages/glubean:
+    dependencies:
+      '@glubean/cli':
+        specifier: workspace:*
+        version: link:../cli
+
   packages/graphql:
     dependencies:
       '@glubean/sdk':

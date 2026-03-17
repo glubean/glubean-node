@@ -1,0 +1,18 @@
+{
+  "name": "glubean",
+  "version": "0.1.15",
+  "description": "Glubean CLI — test automation for APIs, browsers, and more",
+  "type": "module",
+  "bin": {
+    "glubean": "./bin/glubean.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@glubean/cli": "workspace:*"
+  }
+}

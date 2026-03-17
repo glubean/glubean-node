@@ -57,6 +57,13 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+      # Short-name wrapper (depends on @glubean/cli)
+      - name: Publish glubean
+        continue-on-error: true
+        run: pnpm --filter glubean publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       # Plugin packages (versioned independently)
       - name: Publish @glubean/auth
         continue-on-error: true
