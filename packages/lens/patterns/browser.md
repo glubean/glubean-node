@@ -1,5 +1,7 @@
 # Browser Testing
 
+> **Requires:** `npm install @glubean/browser`
+
 ## Setup (see also configure.md)
 
 ```typescript

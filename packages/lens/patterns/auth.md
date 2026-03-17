@@ -2,6 +2,8 @@
 
 Login, get token, use it on protected endpoints.
 
+> **Tip:** For common auth patterns (bearer, API key, basic, OAuth2), use `@glubean/auth` plugin instead of writing auth manually. See [plugins.md](plugins.md).
+
 ## Builder pattern (multi-step)
 
 ```typescript

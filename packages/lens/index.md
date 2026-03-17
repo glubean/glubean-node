@@ -1,4 +1,4 @@
-# Glubean Cheatsheet Index
+# Glubean Lens Index
 
 Quick lookup for AI agents. Read this first, then open only the files you need.
 
@@ -25,6 +25,12 @@ Quick lookup for AI agents. Read this first, then open only the files you need.
 | [session.md](patterns/session.md) | Cross-file shared state via `ctx.session` (auth token reuse, workflow chains) |
 | [browser.md](patterns/browser.md) | Browser testing — setup, navigation, forms, scraping, dynamic elements |
 | [ai-contracts.md](patterns/ai-contracts.md) | Testing AI/LLM endpoints — schema validation, consistency, regression |
+
+## Plugins
+
+| File | When to use |
+|------|------------|
+| [plugins.md](patterns/plugins.md) | Auth strategies (bearer, apiKey, basic, OAuth2), browser, GraphQL, gRPC — **check here before writing auth/plugin code by hand** |
 
 ## Rules (always follow)
 

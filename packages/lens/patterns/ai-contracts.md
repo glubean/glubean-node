@@ -1,5 +1,7 @@
 # AI Contract Testing
 
+> **Requires:** `npm install ai @ai-sdk/openai`
+
 Test AI/LLM endpoints with structured output validation and consistency checks.
 
 ## Setup (see configure.md for full AI plugin setup)
