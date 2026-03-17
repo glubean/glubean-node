@@ -31,5 +31,10 @@
     "@grpc/proto-loader": "^0.7.0",
     "vitest": "^3.2.1",
     "typescript": "^5.8.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/glubean/glubean.git",
+    "directory": "packages/grpc"
   }
 }

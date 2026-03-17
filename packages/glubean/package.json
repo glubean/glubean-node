@@ -14,5 +14,10 @@
   },
   "dependencies": {
     "@glubean/cli": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/glubean/glubean.git",
+    "directory": "packages/glubean"
   }
 }

@@ -33,5 +33,10 @@
     "puppeteer-core": {
       "optional": false
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/glubean/glubean.git",
+    "directory": "packages/browser"
   }
 }
