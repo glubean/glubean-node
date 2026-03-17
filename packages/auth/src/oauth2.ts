@@ -1,4 +1,5 @@
 import type { ConfigureHttpOptions, HttpRequestOptions } from "@glubean/sdk";
+import { rebuildRequest } from "./request.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -34,16 +35,6 @@ const TOKEN_URL_H = "X-Glubean-OAuth2-TokenUrl";
 const CLIENT_ID_H = "X-Glubean-OAuth2-ClientId";
 const CLIENT_SECRET_H = "X-Glubean-OAuth2-ClientSecret";
 const REFRESH_TOKEN_H = "X-Glubean-OAuth2-RefreshToken";
-
-function rebuildRequest(request: Request, headers: Headers): Request {
-  return new Request(request.url, {
-    method: request.method,
-    headers,
-    body: request.body,
-    redirect: request.redirect,
-    signal: request.signal,
-  });
-}
 
 function cleanMarkers(request: Request, ...names: string[]): Headers {
   const h = new Headers(request.headers);
@@ -156,7 +147,17 @@ function refreshToken(opts: OAuth2RefreshTokenOptions): ConfigureHttpOptions {
           accessToken = await fetchToken(request);
           const h = cleanMarkers(request, ...allMarkers);
           h.set("Authorization", `Bearer ${accessToken}`);
-          return fetch(request.url, { method: request.method, headers: h, body: request.body, redirect: request.redirect, signal: request.signal });
+          const bodyBuffer = request.body
+            ? await request.clone().arrayBuffer()
+            : null;
+          return fetch(request.url, {
+            method: request.method,
+            headers: h,
+            body: bodyBuffer,
+            redirect: request.redirect,
+            signal: request.signal,
+            ...(bodyBuffer ? { duplex: "half" as const } : {}),
+          } as RequestInit);
         },
       ],
     },

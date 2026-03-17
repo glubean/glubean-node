@@ -22,14 +22,14 @@ describe("basicAuth", () => {
     expect(opts.hooks?.beforeRequest).toHaveLength(1);
   });
 
-  it("hook computes base64 from marker header", () => {
+  it("hook computes base64 from marker header", async () => {
     const opts = basicAuth({ prefixUrl: "{{BASE_URL}}", username: "{{USER}}", password: "{{PASS}}" });
     const hook = opts.hooks!.beforeRequest![0];
 
     const request = new Request("https://example.com", {
       headers: { "X-Glubean-Basic-Auth": "admin:secret123" },
     });
-    const result = hook(request, {}) as Request;
+    const result = await hook(request, {}) as Request;
 
     expect(result.headers.get("Authorization")).toBe(
       `Basic ${Buffer.from("admin:secret123").toString("base64")}`
@@ -45,7 +45,7 @@ describe("apiKey", () => {
     expect(opts.hooks).toBeUndefined();
   });
 
-  it("query mode: uses beforeRequest hook", () => {
+  it("query mode: uses beforeRequest hook", async () => {
     const opts = apiKey({ prefixUrl: "{{BASE_URL}}", param: "api_key", value: "{{MY_KEY}}", location: "query" });
     expect(opts.hooks?.beforeRequest).toHaveLength(1);
 
@@ -53,7 +53,7 @@ describe("apiKey", () => {
     const request = new Request("https://example.com/path", {
       headers: { "X-Glubean-ApiKey-Query": "my-secret-key" },
     });
-    const result = hook(request, {}) as Request;
+    const result = await hook(request, {}) as Request;
 
     const url = new URL(result.url);
     expect(url.searchParams.get("api_key")).toBe("my-secret-key");

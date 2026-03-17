@@ -1,4 +1,5 @@
 import type { ConfigureHttpOptions } from "@glubean/sdk";
+import { rebuildRequest } from "./request.js";
 
 export interface BasicAuthOptions {
   /** Base URL — literal or `{{VAR}}` reference */
@@ -30,7 +31,7 @@ export function basicAuth(opts: BasicAuthOptions): ConfigureHttpOptions {
     },
     hooks: {
       beforeRequest: [
-        (request: Request): Request => {
+        async (request: Request): Promise<Request> => {
           const credentials = request.headers.get(MARKER);
           if (!credentials) return request;
 
@@ -38,13 +39,7 @@ export function basicAuth(opts: BasicAuthOptions): ConfigureHttpOptions {
           const headers = new Headers(request.headers);
           headers.delete(MARKER);
           headers.set("Authorization", `Basic ${encoded}`);
-          return new Request(request.url, {
-            method: request.method,
-            headers,
-            body: request.body,
-            redirect: request.redirect,
-            signal: request.signal,
-          });
+          return rebuildRequest(request, headers);
         },
       ],
     },
