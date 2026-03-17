@@ -1,5 +1,26 @@
 # Configure — Shared HTTP Clients, Vars, Secrets, Plugins
 
+## .env vs .env.secrets — what goes where?
+
+| File | What goes here | Committed to git? | Example |
+|------|---------------|-------------------|---------|
+| `.env` | Public config: URLs, usernames, feature flags | Yes | `BASE_URL=https://api.example.com` |
+| `.env.secrets` | Credentials: API keys, tokens, passwords | **No** (gitignored) | `API_KEY=sk-live-xxx` |
+
+**Rule of thumb:** if leaking it would be a security risk, it goes in `.env.secrets`.
+
+In code, use `{{KEY}}` to reference values from either file — the SDK resolves from secrets first, then vars.
+
+```
+.env:
+  BASE_URL=https://api.example.com
+  GITHUB_USER=glubean
+
+.env.secrets:
+  API_KEY=sk-live-xxx
+  GITHUB_TOKEN=ghp_xxx
+```
+
 ## Basic API client
 
 ```typescript
@@ -10,9 +31,9 @@ export const { http: api, vars, secrets } = configure({
   vars: { user: "GITHUB_USER" },       // .env → property mapping
   secrets: { token: "API_KEY" },        // .env.secrets → property mapping
   http: {
-    prefixUrl: "BASE_URL",             // Env var name (resolved at runtime)
+    prefixUrl: "{{BASE_URL}}",         // {{KEY}} = resolve from .env or .env.secrets
     headers: {
-      Authorization: "Bearer {{API_KEY}}",  // {{var}} interpolation from secrets
+      Authorization: "Bearer {{API_KEY}}",  // {{KEY}} from .env.secrets
       Accept: "application/json",
     },
     timeout: 15000,
@@ -46,7 +67,7 @@ export const { http: githubApi, vars: githubVars } = configure({
     searchQuery: "GITHUB_SEARCH_QUERY",
   },
   http: {
-    prefixUrl: "GITHUB_API",
+    prefixUrl: "{{GITHUB_API}}",
     headers: { Accept: "application/vnd.github+json" },
   },
 });
@@ -55,7 +76,7 @@ export const { http: githubApi, vars: githubVars } = configure({
 export const { http: githubAuthApi } = configure({
   secrets: { token: "GITHUB_TOKEN" },
   http: {
-    prefixUrl: "GITHUB_API",
+    prefixUrl: "{{GITHUB_API}}",
     headers: {
       Authorization: "Bearer {{GITHUB_TOKEN}}",
       Accept: "application/vnd.github+json",
@@ -136,5 +157,5 @@ const BASE_URL = "https://api.example.com";
 
 // ✅ Put in .env
 // .env: BASE_URL=https://api.example.com
-// configure: http: { prefixUrl: "BASE_URL" }
+// configure: http: { prefixUrl: "{{BASE_URL}}" }
 ```
