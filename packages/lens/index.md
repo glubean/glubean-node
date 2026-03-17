@@ -16,7 +16,7 @@ Quick lookup for AI agents. Read this first, then open only the files you need.
 | [configure.md](patterns/configure.md) | Setting up HTTP client, env vars, secrets, plugins — **read this first for any new project** |
 | [smoke.md](patterns/smoke.md) | Simple single-endpoint health/smoke test |
 | [crud.md](patterns/crud.md) | Create → Read → Update → Delete with setup/teardown cleanup |
-| [auth.md](patterns/auth.md) | Login flow, token management, protected endpoints |
+| [builder-reuse.md](patterns/builder-reuse.md) | Multi-step builder, `.use()` / `.group()` for reusable step sequences |
 | [data-driven.md](patterns/data-driven.md) | `test.each` (one file = one case) and `test.pick` (named cases, merged files) |
 | [errors.md](patterns/errors.md) | Negative tests — 401, 403, 404, 422 |
 | [polling.md](patterns/polling.md) | Async jobs, `pollUntil`, eventual consistency |
@@ -30,7 +30,8 @@ Quick lookup for AI agents. Read this first, then open only the files you need.
 
 | File | When to use |
 |------|------------|
-| [plugins.md](patterns/plugins.md) | Auth strategies (bearer, apiKey, basic, OAuth2), browser, GraphQL, gRPC — **check here before writing auth/plugin code by hand** |
+| [plugins.md](patterns/plugins.md) | Plugin index — **check here before writing auth/plugin code by hand** |
+| [auth.md](patterns/auth.md) | `@glubean/auth` — bearer, apiKey, basic, OAuth2, withLogin, combining strategies |
 
 ## Rules (always follow)
 

@@ -1,56 +1,131 @@
-# Auth Flow
+# @glubean/auth
 
-Login, get token, use it on protected endpoints.
+> **Requires:** `npm install @glubean/auth`
 
-> **Tip:** For common auth patterns (bearer, API key, basic, OAuth2), use `@glubean/auth` plugin instead of writing auth manually. See [plugins.md](plugins.md).
+Pre-built auth strategies. Returns `ConfigureHttpOptions` — pass directly to `configure({ http: ... })`.
 
-## Builder pattern (multi-step)
+All values support `{{KEY}}` references (resolved from .env / .env.secrets) or literal strings.
+
+For manual auth flows using builder steps, see [builder-reuse.md](builder-reuse.md).
+
+## Bearer token
 
 ```typescript
-// tests/api/auth.test.ts
+import { configure } from "@glubean/sdk";
+import { bearer } from "@glubean/auth";
+
+export const { http: api } = configure({
+  http: bearer({ prefixUrl: "{{BASE_URL}}", token: "{{API_TOKEN}}" }),
+});
+// Every request gets: Authorization: Bearer <resolved value>
+```
+
+## API key (header)
+
+```typescript
+import { apiKey } from "@glubean/auth";
+
+export const { http: api } = configure({
+  http: apiKey({ prefixUrl: "{{BASE_URL}}", param: "X-Api-Key", value: "{{API_KEY}}" }),
+});
+// Every request gets header: X-Api-Key: <value>
+```
+
+## API key (query param)
+
+```typescript
+import { apiKey } from "@glubean/auth";
+
+export const { http: api } = configure({
+  http: apiKey({ prefixUrl: "{{BASE_URL}}", param: "apiKey", value: "{{API_KEY}}", location: "query" }),
+});
+// Every request gets: ?apiKey=<value>
+```
+
+## Basic auth
+
+```typescript
+import { basicAuth } from "@glubean/auth";
+
+export const { http: api } = configure({
+  http: basicAuth({ prefixUrl: "{{BASE_URL}}", username: "{{USER}}", password: "{{PASS}}" }),
+});
+// Every request gets: Authorization: Basic base64(user:pass)
+```
+
+## OAuth2 — client credentials
+
+```typescript
+import { oauth2 } from "@glubean/auth";
+
+export const { http: api } = configure({
+  http: oauth2.clientCredentials({
+    prefixUrl: "{{BASE_URL}}",
+    tokenUrl: "{{OAUTH_TOKEN_URL}}",
+    clientId: "{{CLIENT_ID}}",
+    clientSecret: "{{CLIENT_SECRET}}",
+    scope: "read write",              // Optional
+  }),
+});
+// Auto-fetches token, caches it, refreshes before expiry
+```
+
+## OAuth2 — refresh token
+
+```typescript
+import { oauth2 } from "@glubean/auth";
+
+export const { http: api } = configure({
+  http: oauth2.refreshToken({
+    prefixUrl: "{{BASE_URL}}",
+    tokenUrl: "{{OAUTH_TOKEN_URL}}",
+    refreshToken: "{{REFRESH_TOKEN}}",
+    clientId: "{{CLIENT_ID}}",
+    clientSecret: "{{CLIENT_SECRET}}",    // Optional
+  }),
+});
+// Auto-refreshes on 401
+```
+
+## withLogin — builder transform
+
+```typescript
 import { test } from "@glubean/sdk";
+import { withLogin } from "@glubean/auth";
 
-export const authFlow = test("auth-flow")
-  .meta({ name: "Login then access protected resource", tags: ["api", "auth"] })
-  .step("login", async ({ http, expect, secrets }) => {
-    const res = await http.post("https://api.example.com/auth/token-login", {
-      json: { apiKey: secrets.require("API_KEY") },
-    }).json<{ token: string }>();
-    expect(res.token).toBeDefined();
-    return { token: res.token };
-  })
-  .step("access profile", async ({ http, expect }, state) => {
-    const authed = http.extend({
-      headers: { Authorization: `Bearer ${state.token}` },
-    });
-    const profile = await authed.get("https://api.example.com/auth/profile").json<{ email: string }>();
-    expect(profile.email).toBeDefined();
+const login = withLogin({
+  endpoint: "{{BASE_URL}}/auth/login",
+  credentials: { username: "{{USERNAME}}", password: "{{PASSWORD}}" },
+  extractToken: (body) => body.token,
+});
+
+export const protectedTest = test("protected")
+  .use(login)
+  .step("access", async (ctx, { authedHttp }) => {
+    const res = await authedHttp.get("https://api.example.com/me").json<{ id: string }>();
+    ctx.expect(res.id).toBeDefined();
   });
 ```
 
-## Reusable auth with `.use()`
+## Combining auth strategies
+
+When mixing `apiKey()` with custom headers, extract the base config and spread its `headers`:
 
 ```typescript
-const withAuth = (b: TestBuilder<unknown>) => b
-  .step("login", async (ctx) => {
-    const { token } = await ctx.http.post("/login", {
-      json: { username: ctx.secrets.require("USERNAME"), password: ctx.secrets.require("PASSWORD") },
-    }).json<{ token: string }>();
-    return { token };
-  });
+import { configure } from "@glubean/sdk";
+import { apiKey } from "@glubean/auth";
 
-export const testA = test("test-a").use(withAuth).step("act", async (ctx, { token }) => { ... });
-export const testB = test("test-b").use(withAuth).step("verify", async (ctx, { token }) => { ... });
-```
+const base = apiKey({ prefixUrl: "{{BASE_URL}}", param: "apiKey", value: "{{API_KEY}}", location: "query" });
 
-## Unauthorized (negative test)
-
-```typescript
-export const unauthorized = test(
-  { id: "unauthorized-access", tags: ["api", "auth"] },
-  async ({ http, expect }) => {
-    const res = await http.get("https://api.example.com/protected");
-    expect(res).toHaveStatus(401);
+export const { http } = configure({
+  http: {
+    ...base,
+    headers: {
+      ...base.headers,   // ← preserve plugin's internal headers
+      Authorization: "Bearer {{TOKEN}}",
+    },
   },
-);
+});
 ```
+
+> **Why?** `apiKey({ location: "query" })` and `basicAuth()` use marker headers + beforeRequest hooks internally. Overwriting `headers` without spreading `base.headers` drops the marker and the hook silently does nothing.

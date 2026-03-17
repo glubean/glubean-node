@@ -240,7 +240,11 @@ function buildLazyHttp(httpOptions: ConfigureHttpOptions): HttpClient {
     const extendOptions: Record<string, any> = {};
 
     if (httpOptions.prefixUrl) {
-      extendOptions.prefixUrl = requireVar(httpOptions.prefixUrl);
+      extendOptions.prefixUrl = resolveTemplate(
+        httpOptions.prefixUrl,
+        runtime.vars,
+        runtime.secrets,
+      );
     }
 
     if (httpOptions.headers) {
