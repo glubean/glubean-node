@@ -1,5 +1,5 @@
 import { test, expect } from "vitest";
-import { extractAliasesFromSource, extractFromSource, isGlubeanFile } from "./extractor-static.js";
+import { extractAliasesFromSource, extractFromSource, extractPickExamples, isGlubeanFile } from "./extractor-static.js";
 
 // =============================================================================
 // Empty / no-export cases
@@ -750,4 +750,203 @@ test("isGlubeanFile with customFns detects non-convention imports", () => {
   expect(
     isGlubeanFile(`import { scenario } from "./configure.ts";`, ["scenario"]),
   ).toBe(true);
+});
+
+// =============================================================================
+// extractPickExamples
+// =============================================================================
+
+test("extractPickExamples detects inline object literal", () => {
+  const content = `
+export const search = test.pick({
+  "by-name": { q: "phone" },
+  "by-category": { q: "laptop" },
+})(
+  "search-$_pick",
+  async (ctx, data) => {},
+);`;
+  const picks = extractPickExamples(content);
+  expect(picks.length).toBe(1);
+  expect(picks[0].testId).toBe("search-$_pick");
+  expect(picks[0].keys).toEqual(["by-name", "by-category"]);
+  expect(picks[0].dataSource).toEqual({ type: "inline" });
+});
+
+test("extractPickExamples detects fromDir.merge with variable", () => {
+  const content = `
+const examples = await fromDir.merge("./data/add-product/");
+
+export const addProduct = test.pick(examples)(
+  "add-product-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content);
+  expect(picks.length).toBe(1);
+  expect(picks[0].testId).toBe("add-product-$_pick");
+  expect(picks[0].exportName).toBe("addProduct");
+  expect(picks[0].dataSource).toEqual({
+    type: "dir-merge",
+    path: "./data/add-product/",
+  });
+  expect(picks[0].keys).toBeNull();
+});
+
+test("extractPickExamples detects JSON import", () => {
+  const content = `
+import examples from "../data/create-user.json" with { type: "json" };
+
+export const createUser = test.pick(examples)(
+  "create-user-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content);
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "json-import",
+    path: "../data/create-user.json",
+  });
+});
+
+test("extractPickExamples returns undefined dataSource for unknown variable", () => {
+  const content = `
+const dir = vars.require("DATA_DIR");
+const examples = await fromDir.merge(dir);
+
+export const dynTest = test.pick(examples)(
+  "dyn-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content);
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toBeUndefined();
+  expect(picks[0].keys).toBeNull();
+});
+
+// =============================================================================
+// extractPickExamples — filePath resolution
+// =============================================================================
+
+test("extractPickExamples resolves ./data/ relative to filePath", () => {
+  const content = `
+const examples = await fromDir.merge("./data/products/");
+
+export const prodTest = test.pick(examples)(
+  "prod-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content, {
+    filePath: "/project/tests/api/products.test.ts",
+  });
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "dir-merge",
+    path: "/project/tests/api/data/products/",
+  });
+});
+
+test("extractPickExamples resolves ../data/ relative to filePath", () => {
+  const content = `
+const cases = await fromDir.merge("../data/directions/");
+
+export const directions = test.pick(cases)(
+  { id: "directions-$_pick", name: "Directions: $_pick", tags: ["geo"] },
+  async (ctx, { origin }) => {},
+);`;
+  const picks = extractPickExamples(content, {
+    filePath: "/project/tests/geo/directions.test.ts",
+  });
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "dir-merge",
+    path: "/project/tests/data/directions/",
+  });
+});
+
+test("extractPickExamples falls back to raw path when no filePath", () => {
+  const content = `
+const cases = await fromDir.merge("../data/directions/");
+
+export const directions = test.pick(cases)(
+  "directions-$_pick",
+  async (ctx, { origin }) => {},
+);`;
+  // No filePath — should keep raw path
+  const picks = extractPickExamples(content);
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "dir-merge",
+    path: "../data/directions/",
+  });
+});
+
+test("extractPickExamples resolves JSON import path relative to filePath", () => {
+  const content = `
+import examples from "../data/create-user.json" with { type: "json" };
+
+export const createUser = test.pick(examples)(
+  "create-user-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content, {
+    filePath: "/project/tests/users/create.test.ts",
+  });
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "json-import",
+    path: "/project/tests/data/create-user.json",
+  });
+});
+
+test("extractPickExamples keeps absolute paths unchanged", () => {
+  const content = `
+const examples = await fromDir.merge("/absolute/data/products/");
+
+export const prodTest = test.pick(examples)(
+  "prod-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content, {
+    filePath: "/project/tests/api/products.test.ts",
+  });
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "dir-merge",
+    path: "/absolute/data/products/",
+  });
+});
+
+test("extractPickExamples detects fromDir (not .merge/.concat)", () => {
+  const content = `
+const rows = await fromDir("./cases/");
+
+export const caseTest = test.pick(rows)(
+  "case-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content, {
+    filePath: "/project/tests/api/cases.test.ts",
+  });
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "dir",
+    path: "/project/tests/api/cases/",
+  });
+});
+
+test("extractPickExamples detects fromDir.concat", () => {
+  const content = `
+const batches = await fromDir.concat("./batches/");
+
+export const batchTest = test.pick(batches)(
+  "batch-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content, {
+    filePath: "/project/tests/api/batch.test.ts",
+  });
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "dir-concat",
+    path: "/project/tests/api/batches/",
+  });
 });

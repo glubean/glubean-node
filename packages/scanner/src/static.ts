@@ -24,7 +24,9 @@ export {
   createStaticExtractor,
   extractAliasesFromSource,
   extractFromSource,
+  extractPickExamples,
   isGlubeanFile,
 } from "./extractor-static.js";
 
 export type { ExportMeta } from "./types.js";
+export type { PickMeta } from "./extractor-static.js";

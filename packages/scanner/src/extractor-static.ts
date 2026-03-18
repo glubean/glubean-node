@@ -18,6 +18,7 @@
  *   not be fully parsed.
  */
 
+import { dirname, resolve, isAbsolute } from "node:path";
 import type { ExportMeta } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -474,4 +475,247 @@ export function createStaticExtractor(
     const merged = customFns || runtimeFns ? [...new Set([...(customFns ?? []), ...(runtimeFns ?? [])])] : undefined;
     return extractFromSource(content, merged);
   };
+}
+
+// ---------------------------------------------------------------------------
+// test.pick() example extraction (for CodeLens and other consumers)
+// ---------------------------------------------------------------------------
+
+/** Metadata for a discovered test.pick() call. */
+export interface PickMeta {
+  /** The test ID template (e.g. "create-user-$_pick") */
+  testId: string;
+  /** Source location (1-based line number) */
+  line: number;
+  /** Export name of the variable */
+  exportName: string;
+  /**
+   * Statically resolved example keys, or null if keys could not be determined.
+   * null means the consumer should show a format hint instead of run buttons.
+   */
+  keys: string[] | null;
+  /**
+   * How the data was sourced — helps consumers resolve keys at render time.
+   * - "inline": keys extracted directly from object literal in source
+   * - "json-import": keys come from an imported JSON file (path provided)
+   * - "dir-merge": keys come from all JSON files in a directory, merged
+   * - "dir": keys come from files in a directory (one file = one row)
+   * - "dir-concat": keys come from arrays concatenated from files in a directory
+   */
+  dataSource?:
+    | { type: "inline" }
+    | { type: "json-import"; path: string }
+    | { type: "dir-merge"; path: string }
+    | { type: "dir"; path: string }
+    | { type: "dir-concat"; path: string };
+}
+
+/**
+ * Resolve a data source path relative to a source file's directory.
+ *
+ * When `filePath` is provided, relative paths (starting with `./` or `../`)
+ * are resolved against `dirname(filePath)`.
+ * When `filePath` is omitted, paths are returned as-is (backward compatible).
+ */
+function resolveDataPath(rawPath: string, filePath?: string): string {
+  if (!filePath) return rawPath;
+  if (isAbsolute(rawPath)) return rawPath;
+  const resolved = resolve(dirname(filePath), rawPath);
+  // Preserve trailing slash — it signals "this is a directory" to consumers
+  if (rawPath.endsWith("/") && !resolved.endsWith("/")) {
+    return resolved + "/";
+  }
+  return resolved;
+}
+
+/**
+ * Extract test.pick() metadata from TypeScript source for CodeLens rendering.
+ *
+ * Handles three data source patterns:
+ * 1. Inline object literal: `test.pick({ "key1": ..., "key2": ... })`
+ * 2. JSON import variable: `import X from "./data.json"` then `test.pick(X)`
+ * 3. fromDir.merge variable: `const X = await fromDir.merge("./dir/")` then `test.pick(X)`
+ * 4. fromDir variable: `const X = await fromDir("./dir/")` then `test.pick(X)`
+ * 5. fromDir.concat variable: `const X = await fromDir.concat("./dir/")` then `test.pick(X)`
+ *
+ * For other patterns (dynamic vars, etc.), returns keys: null.
+ *
+ * @param content - TypeScript source code
+ * @param options - Optional settings
+ * @param options.customFns - Additional function names discovered via alias scanning.
+ * @param options.filePath - Source file path. When provided, data source paths
+ *                           (fromDir, JSON imports) are resolved relative to
+ *                           this file's directory instead of being left as raw
+ *                           strings from the source code.
+ * @returns Array of PickMeta, or empty if no test.pick calls found
+ */
+export function extractPickExamples(
+  content: string,
+  options?: { customFns?: string[]; filePath?: string },
+): PickMeta[] {
+  const customFns = options?.customFns;
+  const filePath = options?.filePath;
+  const results: PickMeta[] = [];
+
+  // Build function-name alternation for pick patterns
+  const fnAlt = customFns && customFns.length > 0
+    ? [...new Set(["test", "task", ...customFns])].map(s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+    : "\\w*(?:Test|Task)|test|task";
+
+  // Build a map of JSON imports: variable name → file path
+  const jsonImports = new Map<string, string>();
+  const importPattern = /import\s+(\w+)\s+from\s+["']([^"']+\.json)["']/g;
+  let importMatch: RegExpExecArray | null;
+  while ((importMatch = importPattern.exec(content)) !== null) {
+    jsonImports.set(importMatch[1], importMatch[2]);
+  }
+
+  // Build a map of fromDir.merge assignments: variable name → directory path
+  const dirMergeSources = new Map<string, string>();
+  const dirMergePattern =
+    /(?:const|let)\s+(\w+)\s*=\s*await\s+fromDir\.merge\s*(?:<[^>]*>)?\s*\(\s*["']([^"']+)["']/g;
+  let dirMergeMatch: RegExpExecArray | null;
+  while ((dirMergeMatch = dirMergePattern.exec(content)) !== null) {
+    dirMergeSources.set(dirMergeMatch[1], dirMergeMatch[2]);
+  }
+
+  // Build a map of fromDir assignments: variable name → directory path
+  const dirSources = new Map<string, string>();
+  const dirPattern =
+    /(?:const|let)\s+(\w+)\s*=\s*await\s+fromDir\s*(?:<[^>]*>)?\s*\(\s*["']([^"']+)["']/g;
+  let dirMatch: RegExpExecArray | null;
+  while ((dirMatch = dirPattern.exec(content)) !== null) {
+    // Exclude fromDir.merge and fromDir.concat which are already matched
+    const fullMatch = dirMatch[0];
+    if (!fullMatch.includes("fromDir.merge") && !fullMatch.includes("fromDir.concat")) {
+      dirSources.set(dirMatch[1], dirMatch[2]);
+    }
+  }
+
+  // Build a map of fromDir.concat assignments: variable name → directory path
+  const dirConcatSources = new Map<string, string>();
+  const dirConcatPattern =
+    /(?:const|let)\s+(\w+)\s*=\s*await\s+fromDir\.concat\s*(?:<[^>]*>)?\s*\(\s*["']([^"']+)["']/g;
+  let dirConcatMatch: RegExpExecArray | null;
+  while ((dirConcatMatch = dirConcatPattern.exec(content)) !== null) {
+    dirConcatSources.set(dirConcatMatch[1], dirConcatMatch[2]);
+  }
+
+  // ── Pattern 1: Inline object literal ────────────────────────────────────
+  const inlinePickPattern = new RegExp(
+    `export\\s+const\\s+(\\w+)\\s*=\\s*(?:${fnAlt})\\s*\\.pick\\s*\\(\\s*\\{([\\s\\S]*?)\\}\\s*\\)\\s*\\(\\s*(?:["']([^"']+)["']|\\{\\s*id:\\s*["']([^"']+)["'])`,
+    "g",
+  );
+
+  let match: RegExpExecArray | null;
+  while ((match = inlinePickPattern.exec(content)) !== null) {
+    const exportName = match[1];
+    const objectBody = match[2];
+    const testId = match[3] ?? match[4];
+    const line = getLineNumber(content, match.index);
+
+    const keys: string[] = [];
+    let depth = 0;
+    for (let i = 0; i < objectBody.length; i++) {
+      const ch = objectBody[i];
+      if (ch === "{" || ch === "[") {
+        depth++;
+      } else if (ch === "}" || ch === "]") {
+        depth--;
+      } else if (depth === 0) {
+        const remaining = objectBody.slice(i);
+        const keyMatch = remaining.match(
+          /^(?:["']([^"']+)["']|([a-zA-Z_]\w*))\s*:/,
+        );
+        if (keyMatch) {
+          keys.push(keyMatch[1] || keyMatch[2]);
+          i += keyMatch[0].length - 1;
+        }
+      }
+    }
+
+    results.push({
+      testId,
+      line,
+      exportName,
+      keys: keys.length > 0 ? keys : null,
+      dataSource: keys.length > 0 ? { type: "inline" } : undefined,
+    });
+  }
+
+  // ── Pattern 2: Variable reference ────────────────────────────────────────
+  const varPickPattern = new RegExp(
+    `export\\s+const\\s+(\\w+)\\s*=\\s*(?:${fnAlt})\\s*\\.pick\\s*\\(\\s*(\\w+)\\s*\\)\\s*\\(\\s*(?:["']([^"']+)["']|\\{\\s*id:\\s*["']([^"']+)["'])`,
+    "g",
+  );
+
+  while ((match = varPickPattern.exec(content)) !== null) {
+    const exportName = match[1];
+    const varName = match[2];
+    const testId = match[3] ?? match[4];
+    const line = getLineNumber(content, match.index);
+
+    // Check JSON import
+    const jsonPath = jsonImports.get(varName);
+    if (jsonPath) {
+      results.push({
+        testId,
+        line,
+        exportName,
+        keys: null,
+        dataSource: { type: "json-import", path: resolveDataPath(jsonPath, filePath) },
+      });
+      continue;
+    }
+
+    // Check fromDir.merge
+    const dirMergePath = dirMergeSources.get(varName);
+    if (dirMergePath) {
+      results.push({
+        testId,
+        line,
+        exportName,
+        keys: null,
+        dataSource: { type: "dir-merge", path: resolveDataPath(dirMergePath, filePath) },
+      });
+      continue;
+    }
+
+    // Check fromDir
+    const dirPathVal = dirSources.get(varName);
+    if (dirPathVal) {
+      results.push({
+        testId,
+        line,
+        exportName,
+        keys: null,
+        dataSource: { type: "dir", path: resolveDataPath(dirPathVal, filePath) },
+      });
+      continue;
+    }
+
+    // Check fromDir.concat
+    const dirConcatPath = dirConcatSources.get(varName);
+    if (dirConcatPath) {
+      results.push({
+        testId,
+        line,
+        exportName,
+        keys: null,
+        dataSource: { type: "dir-concat", path: resolveDataPath(dirConcatPath, filePath) },
+      });
+      continue;
+    }
+
+    // Unknown variable
+    results.push({
+      testId,
+      line,
+      exportName,
+      keys: null,
+      dataSource: undefined,
+    });
+  }
+
+  return results;
 }
