@@ -1,6 +1,17 @@
 # Data-Driven Tests
 
-## test.each — one file = one case
+## Which one to use?
+
+| | `test.each` | `test.pick` |
+|---|---|---|
+| **Runs** | **All** cases | **One selected** case |
+| **Use case** | Regression, coverage | Explore, debug, ad-hoc |
+| **Data source** | Array, `fromDir`, `fromCsv`, `fromYaml` | Object map, `fromDir.merge` + `.local.json` |
+| **Filter** | `--filter` by test id | `--pick` to select by key |
+
+**Rule of thumb:** need to run every case → `.each`. Need to pick one and iterate → `.pick`.
+
+## test.each — runs ALL cases
 
 Each JSON file in the directory becomes a separate test.
 
@@ -42,7 +53,7 @@ export const userFlow = test.each(users)("user-flow-$username")
   });
 ```
 
-## test.pick — named cases, merged files
+## test.pick — runs ONE selected case
 
 `shared.json` has defaults. `*.local.json` for personal overrides (gitignored).
 
