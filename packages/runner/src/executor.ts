@@ -622,6 +622,8 @@ export class TestExecutor {
       }
     }
 
+    if (failedAssertionCount > 0) success = false;
+
     return {
       success, testId, testName, suiteId, suiteName, events, error, stack,
       duration: Date.now() - startTime, retryCount, assertionCount, failedAssertionCount,
