@@ -14,6 +14,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && cp src/zero-project-register.mjs src/zero-project-resolver.mjs dist/",
     "prepublishOnly": "npm run build",
+    "pretest": "node -e \"const fs=require('fs'),p=require('path');const bad=fs.readdirSync('src',{recursive:true}).filter(f=>(/\\.(js|d\\.ts)$/.test(f)&&!f.endsWith('.mjs'))).map(f=>p.join('src',f));if(bad.length){console.error('ERROR: Stale build artifacts in src/ — delete them:',bad);process.exit(1)}\"",
     "test": "vitest run"
   },
   "publishConfig": {

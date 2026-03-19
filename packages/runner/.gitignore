@@ -1,4 +1,5 @@
 .glubean/
-# Prevent stale .js in src (vitest resolves .js before .ts)
+# Prevent stale build artifacts in src (vitest resolves .js before .ts)
 src/**/*.js
+src/**/*.d.ts
 !src/**/*.mjs

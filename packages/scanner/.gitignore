@@ -1,0 +1,5 @@
+
+# Prevent stale build artifacts in src
+src/**/*.js
+src/**/*.d.ts
+!src/**/*.mjs
