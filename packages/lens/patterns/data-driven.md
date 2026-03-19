@@ -6,7 +6,7 @@
 |---|---|---|
 | **Runs** | **All** cases | **One selected** case |
 | **Use case** | Regression, coverage | Explore, debug, ad-hoc |
-| **Data source** | Array, `fromDir`, `fromCsv`, `fromYaml` | Object map, `fromDir.merge` + `.local.json` |
+| **Data source** | Array, `fromDir`, `fromCsv`, `fromYaml` | Object map, `fromDir.merge`, `fromYaml` + `.local.json` |
 | **Filter** | `--filter` by test id | `--pick` to select by key |
 
 **Rule of thumb:** need to run every case → `.each`. Need to pick one and iterate → `.pick`.
@@ -95,6 +95,82 @@ test.pick({
   "edge-case": { name: "", age: -1 },
 })("create-user-$_pick", async (ctx, data) => { ... });
 ```
+
+## Advanced: Structured Test Data
+
+For complex scenarios, flat key-value pairs are not enough. Use a YAML file where each case has nested `request` and `expect` blocks — data drives both the input **and** the assertions.
+
+### YAML data file
+
+```yaml
+# data/search-queries.yaml
+# Each top-level key is a test case name.
+# Structure is arbitrary — not limited to flat key-value.
+
+# Search by product name — basic keyword search
+by-name:
+  description: Search by product name          # human-readable label for logs
+  request:                                      # drives the HTTP request
+    q: phone
+  expect:                                       # drives assertions
+    minResults: 1
+
+# Search by category — broader search
+by-category:
+  description: Search products by category keyword
+  request:
+    q: laptops
+  expect:
+    minResults: 1
+
+# Edge case — empty query
+empty-query:
+  description: Empty query returns nothing
+  request:
+    q: ""
+  expect:
+    minResults: 0
+```
+
+### TypeScript test file
+
+```typescript
+import { fromYaml, test } from "@glubean/sdk";
+
+// Each value is a structured object — destructure freely.
+interface SearchCase {
+  description: string;
+  request: { q: string };
+  expect: { minResults: number };
+}
+
+const cases = await fromYaml<Record<string, SearchCase>>(
+  "./data/search-queries.yaml",
+);
+
+export const search = test.each(Object.entries(cases).map(
+  ([key, c]) => ({ _key: key, ...c }),
+))(
+  "search-$_key",
+  async (ctx, { description, request, expect: exp }) => {
+    ctx.log(description);
+
+    const result = await ctx.http
+      .get("https://dummyjson.com/products/search", {
+        searchParams: { q: request.q },
+      })
+      .json<{ total: number }>();
+
+    ctx.expect(result.total).toBeGreaterThanOrEqual(exp.minResults);
+  },
+);
+```
+
+### Key takeaways
+
+1. **`description` in data** — each case carries a human-readable label so logs and results are easy to scan without reading the YAML.
+2. **`request` + `expect` separation** — data simultaneously drives both the input (what to send) and the assertions (what to check). One file, two purposes.
+3. **Arbitrary structure** — YAML cases are not limited to flat key-value. Nest as deep as needed (`request.headers`, `expect.schema`, etc.).
 
 ## Other data loaders
 
