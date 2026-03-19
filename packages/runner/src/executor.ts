@@ -6,6 +6,7 @@ import { dirname, resolve, join } from "node:path";
 import { createRequire } from "node:module";
 import type { ApiTrace, GlubeanAction, GlubeanEvent } from "@glubean/sdk";
 import type { SharedRunConfig } from "./config.js";
+import { deriveFailureFromEvents } from "./derive_failure.js";
 
 const DEFAULT_CONCURRENCY = 1;
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -622,6 +623,9 @@ export class TestExecutor {
       }
     }
 
+    // Override success based on events (authoritative, not harness counters)
+    if (deriveFailureFromEvents(events)) success = false;
+
     return {
       success, testId, testName, suiteId, suiteName, events, error, stack,
       duration: Date.now() - startTime, retryCount, assertionCount, failedAssertionCount,
@@ -671,3 +675,6 @@ export class TestExecutor {
     return { results: completedResults, success: failedCount === 0, failedCount, skippedCount, duration: Date.now() - startTime };
   }
 }
+
+// Re-export for consumers
+export { deriveFailureFromEvents } from "./derive_failure.js";

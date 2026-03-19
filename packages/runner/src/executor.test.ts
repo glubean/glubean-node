@@ -1308,6 +1308,7 @@ test("ctx.validate - fails with invalid data (severity: error)", async () => {
     { vars: {}, secrets: {} },
   );
 
+  // TODO: should be false once executor events include assertion events from harness
   expect(result.success).toBe(true);
 
   const validations = getSchemaValidations(result.events);
@@ -1373,6 +1374,7 @@ test("ctx.validate - parse fallback (no safeParse)", async () => {
     { vars: {}, secrets: {} },
   );
 
+  // TODO: should be false once executor events include assertion events from harness
   expect(result.success).toBe(true);
   expect(result.failedAssertionCount > 0).toBe(true);
 
@@ -1544,8 +1546,9 @@ test("HTTP schema - query validation fails with invalid params", async () => {
     { vars: {}, secrets: {} },
   );
 
+  // TODO: should be false once executor events include assertion events from harness
   expect(result.success).toBe(true);
-  expect(result.failedAssertionCount > 0).toBe(true);
+  expect(result.failedAssertionCount).toBeGreaterThan(0);
 
   const validations = getSchemaValidations(result.events);
   const queryValidation = validations.find((v) => v.label === "query params");
@@ -1579,8 +1582,9 @@ test("HTTP schema - request body validation fails", async () => {
     { vars: {}, secrets: {} },
   );
 
+  // TODO: should be false once executor events include assertion events from harness
   expect(result.success).toBe(true);
-  expect(result.failedAssertionCount > 0).toBe(true);
+  expect(result.failedAssertionCount).toBeGreaterThan(0);
 
   const validations = getSchemaValidations(result.events);
   const bodyValidation = validations.find((v) => v.label === "request body");
