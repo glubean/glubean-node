@@ -31,7 +31,7 @@ interface UserCase {
   expectedStatus: number;
 }
 
-const users = await fromDir<UserCase>("./data/users/");
+const users = await fromDir<UserCase>("data/users/");
 
 // Quick mode
 export const userLookup = test.each(users)(
@@ -67,7 +67,7 @@ data/search/
 import { test, fromDir } from "@glubean/sdk";
 import { api } from "../../config/api.ts";
 
-const queries = await fromDir.merge<{ q: string; min: number }>("./data/search/");
+const queries = await fromDir.merge<{ q: string; min: number }>("data/search/");
 
 export const searchTests = test.pick(queries)(
   "search-$_pick",                      // $_pick = case name
@@ -145,7 +145,7 @@ interface SearchCase {
 }
 
 const cases = await fromYaml<Record<string, SearchCase>>(
-  "./data/search-queries.yaml",
+  "data/search-queries.yaml",
 );
 
 export const search = test.each(Object.entries(cases).map(
@@ -175,8 +175,8 @@ export const search = test.each(Object.entries(cases).map(
 ## Other data loaders
 
 ```typescript
-const rows = await fromCsv<T>("./data/file.csv");
-const rows = await fromYaml<T>("./data/file.yaml");
-const rows = await fromJsonl<T>("./data/file.jsonl");
-const items = await fromDir.concat<T>("./data/items/");  // Concatenate arrays from files
+const rows = await fromCsv<T>("data/file.csv");
+const rows = await fromYaml<T>("data/file.yaml");
+const rows = await fromJsonl<T>("data/file.jsonl");
+const items = await fromDir.concat<T>("data/items/");  // Concatenate arrays from files
 ```

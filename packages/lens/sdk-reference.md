@@ -57,7 +57,7 @@ test("my-test")
 ### test.each (one file = one case)
 
 ```typescript
-const data = await fromDir<{ username: string }>("./data/users/");
+const data = await fromDir<{ username: string }>("data/users/");
 
 export const tests = test.each(data)(
   "user-$username",                   // $field interpolates from row
@@ -68,7 +68,7 @@ export const tests = test.each(data)(
 ### test.pick (named cases, merged files)
 
 ```typescript
-const cases = await fromDir.merge<{ q: string }>("./data/search/");
+const cases = await fromDir.merge<{ q: string }>("data/search/");
 
 export const tests = test.pick(cases)(
   "search-$_pick",                    // $_pick = case name
@@ -260,29 +260,30 @@ const { myPlugin: instance } = configure({
 
 ```typescript
 // Directory: one JSON file = one row
-const rows = await fromDir<T>("./data/users/");
+const rows = await fromDir<T>("data/users/");
 // Returns: [{ username: "alice" }, { username: "bob" }]
 
 // Directory: merge shared + *.local.json overrides
-const cases = await fromDir.merge<T>("./data/search/");
+const cases = await fromDir.merge<T>("data/search/");
 // Returns: { "case-name": { q: "test", min: 5 }, ... }
 
 // Directory: concatenate arrays from files
-const items = await fromDir.concat<T>("./data/items/");
+const items = await fromDir.concat<T>("data/items/");
 
 // CSV
-const rows = await fromCsv<T>("./data/file.csv");
+const rows = await fromCsv<T>("data/file.csv");
 
 // YAML
-const rows = await fromYaml<T>("./data/file.yaml");
+const rows = await fromYaml<T>("data/file.yaml");
 
 // JSONL (one JSON object per line)
-const rows = await fromJsonl<T>("./data/file.jsonl");
+const rows = await fromJsonl<T>("data/file.jsonl");
 ```
 
 ### Data file conventions
 
 - `data/` directory at project root
+- Prefer bare `data/...` paths for shared project data
 - `shared.json` for committed defaults
 - `*.local.json` for personal overrides (gitignored)
 - Each JSON file in `fromDir()` becomes one test case; filename = case name
