@@ -1,1 +1,5 @@
 .glubean/
+# Prevent stale .js in src (vitest resolves .js before .ts)
+src/**/*.js
+!src/**/*.test.js
+!src/**/*.mjs
