@@ -646,7 +646,7 @@ async function _collectAndSort(
   path: string,
   options?: FromDirOptions,
 ): Promise<string[]> {
-  const extensions = toArray(options?.ext || ".json");
+  const extensions = toArray(options?.ext || [".json", ".yaml", ".yml"]);
   const recursive = options?.recursive ?? false;
   const files: string[] = [];
   await collectFiles(path, extensions, recursive, files);
