@@ -844,6 +844,42 @@ export const prodTest = test.pick(examples)(
   });
 });
 
+test("extractPickExamples resolves bare data/ relative to projectRoot", () => {
+  const content = `
+const examples = await fromDir.merge("data/products/");
+
+export const prodTest = test.pick(examples)(
+  "prod-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content, {
+    projectRoot: "/project",
+  });
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "dir-merge",
+    path: "/project/data/products/",
+  });
+});
+
+test("extractPickExamples keeps ./data/ raw when only projectRoot is provided", () => {
+  const content = `
+const examples = await fromDir.merge("./data/products/");
+
+export const prodTest = test.pick(examples)(
+  "prod-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content, {
+    projectRoot: "/project",
+  });
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "dir-merge",
+    path: "./data/products/",
+  });
+});
+
 test("extractPickExamples resolves ../data/ relative to filePath", () => {
   const content = `
 const cases = await fromDir.merge("../data/directions/");
@@ -876,6 +912,24 @@ export const directions = test.pick(cases)(
   expect(picks[0].dataSource).toEqual({
     type: "dir-merge",
     path: "../data/directions/",
+  });
+});
+
+test("extractPickExamples keeps bare data/ raw when only filePath is provided", () => {
+  const content = `
+const examples = await fromDir.merge("data/products/");
+
+export const prodTest = test.pick(examples)(
+  "prod-$_pick",
+  async (ctx, body) => {},
+);`;
+  const picks = extractPickExamples(content, {
+    filePath: "/project/tests/api/products.test.ts",
+  });
+  expect(picks.length).toBe(1);
+  expect(picks[0].dataSource).toEqual({
+    type: "dir-merge",
+    path: "data/products/",
   });
 });
 

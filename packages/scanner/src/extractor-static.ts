@@ -18,7 +18,7 @@
  *   not be fully parsed.
  */
 
-import { dirname, resolve, isAbsolute } from "node:path";
+import { resolveDataPath } from "./data-path.js";
 import type { ExportMeta } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -511,24 +511,6 @@ export interface PickMeta {
 }
 
 /**
- * Resolve a data source path relative to a source file's directory.
- *
- * When `filePath` is provided, relative paths (starting with `./` or `../`)
- * are resolved against `dirname(filePath)`.
- * When `filePath` is omitted, paths are returned as-is (backward compatible).
- */
-function resolveDataPath(rawPath: string, filePath?: string): string {
-  if (!filePath) return rawPath;
-  if (isAbsolute(rawPath)) return rawPath;
-  const resolved = resolve(dirname(filePath), rawPath);
-  // Preserve trailing slash — it signals "this is a directory" to consumers
-  if (rawPath.endsWith("/") && !resolved.endsWith("/")) {
-    return resolved + "/";
-  }
-  return resolved;
-}
-
-/**
  * Extract test.pick() metadata from TypeScript source for CodeLens rendering.
  *
  * Handles three data source patterns:
@@ -543,18 +525,20 @@ function resolveDataPath(rawPath: string, filePath?: string): string {
  * @param content - TypeScript source code
  * @param options - Optional settings
  * @param options.customFns - Additional function names discovered via alias scanning.
- * @param options.filePath - Source file path. When provided, data source paths
- *                           (fromDir, JSON imports) are resolved relative to
- *                           this file's directory instead of being left as raw
- *                           strings from the source code.
+ * @param options.filePath - Source file path. When provided, file-relative
+ *                           paths are resolved against this file's directory.
+ * @param options.projectRoot - Project root. When provided, bare paths are
+ *                              resolved against the project root instead of
+ *                              the source file directory.
  * @returns Array of PickMeta, or empty if no test.pick calls found
  */
 export function extractPickExamples(
   content: string,
-  options?: { customFns?: string[]; filePath?: string },
+  options?: { customFns?: string[]; filePath?: string; projectRoot?: string },
 ): PickMeta[] {
   const customFns = options?.customFns;
   const filePath = options?.filePath;
+  const projectRoot = options?.projectRoot;
   const results: PickMeta[] = [];
 
   // Build function-name alternation for pick patterns
@@ -663,7 +647,13 @@ export function extractPickExamples(
         line,
         exportName,
         keys: null,
-        dataSource: { type: "json-import", path: resolveDataPath(jsonPath, filePath) },
+        dataSource: {
+          type: "json-import",
+          path: resolveDataPath(jsonPath, {
+            filePath,
+            projectRoot,
+          }).resolvedPath,
+        },
       });
       continue;
     }
@@ -676,7 +666,13 @@ export function extractPickExamples(
         line,
         exportName,
         keys: null,
-        dataSource: { type: "dir-merge", path: resolveDataPath(dirMergePath, filePath) },
+        dataSource: {
+          type: "dir-merge",
+          path: resolveDataPath(dirMergePath, {
+            filePath,
+            projectRoot,
+          }).resolvedPath,
+        },
       });
       continue;
     }
@@ -689,7 +685,13 @@ export function extractPickExamples(
         line,
         exportName,
         keys: null,
-        dataSource: { type: "dir", path: resolveDataPath(dirPathVal, filePath) },
+        dataSource: {
+          type: "dir",
+          path: resolveDataPath(dirPathVal, {
+            filePath,
+            projectRoot,
+          }).resolvedPath,
+        },
       });
       continue;
     }
@@ -702,7 +704,13 @@ export function extractPickExamples(
         line,
         exportName,
         keys: null,
-        dataSource: { type: "dir-concat", path: resolveDataPath(dirConcatPath, filePath) },
+        dataSource: {
+          type: "dir-concat",
+          path: resolveDataPath(dirConcatPath, {
+            filePath,
+            projectRoot,
+          }).resolvedPath,
+        },
       });
       continue;
     }

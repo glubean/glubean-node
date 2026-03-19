@@ -6,6 +6,7 @@ import { test, expect } from "vitest";
 import { fromCsv, fromDir, fromJsonl, fromYaml, toArray } from "./data.js";
 import { test as gbTest } from "./index.js";
 import { clearRegistry, getRegistry } from "./internal.js";
+import { loadCsvFromHelper } from "./test-helpers/relative-loader.js";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
@@ -44,6 +45,23 @@ test("fromCsv - loads basic CSV with headers", async () => {
   expect(data[0]).toEqual({ id: "1", country: "US", expected: "200" });
   expect(data[1]).toEqual({ id: "2", country: "JP", expected: "200" });
   expect(data[2]).toEqual({ id: "999", country: "US", expected: "404" });
+});
+
+test("fromCsv - bare path resolves relative to project root", async () => {
+  const data = await fromCsv("testdata/cases.csv");
+  expect(data.length).toBe(3);
+  expect(data[0]).toEqual({ id: "1", country: "US", expected: "200" });
+});
+
+test("fromCsv - ../ path resolves relative to caller file", async () => {
+  const data = await fromCsv("../testdata/cases.csv");
+  expect(data.length).toBe(3);
+  expect(data[1]).toEqual({ id: "2", country: "JP", expected: "200" });
+});
+
+test("fromCsv - helper file resolves relative path from helper location", async () => {
+  const data = await loadCsvFromHelper();
+  expect(data).toEqual([{ id: "helper-1", country: "SG", expected: "201" }]);
 });
 
 test("fromCsv - custom separator (TSV)", async () => {
@@ -101,7 +119,9 @@ test("fromCsv - nonexistent file error includes path context", async () => {
   ).rejects.toThrow("Resolved path:");
   await expect(
     () => fromCsv("./nonexistent.csv"),
-  ).rejects.toThrow("Hint: data loader paths are resolved from project root");
+  ).rejects.toThrow(
+    'Hint: paths starting with "./" or "../" are resolved relative to the calling file.',
+  );
 });
 
 test("fromDir - nonexistent directory error includes path context", async () => {
@@ -140,6 +160,12 @@ test("fromYaml - loads top-level array", async () => {
   expect(data.length).toBe(3);
   expect(data[0]).toEqual({ id: 1, country: "US", expected: 200 });
   expect(data[1]).toEqual({ id: 2, country: "JP", expected: 200 });
+});
+
+test("fromYaml - ../ path resolves relative to caller file", async () => {
+  const data = await fromYaml("../testdata/cases.yaml");
+  expect(data.length).toBe(3);
+  expect(data[0]).toEqual({ id: 1, country: "US", expected: 200 });
 });
 
 test("fromYaml - loads nested array with pick", async () => {
@@ -235,6 +261,13 @@ test("fromDir - default mode: one file = one row", async () => {
   expect(data[1]._name).toBe("user-999");
   expect(data[1].id).toBe(999);
   expect(data[1].country).toBe("JP");
+});
+
+test("fromDir - bare path resolves relative to project root", async () => {
+  const data = await fromDir("testdata/cases-dir/");
+  expect(data.length).toBe(2);
+  const names = data.map((row) => row._name).sort();
+  expect(names).toEqual(["user-1", "user-999"]);
 });
 
 test("fromDir - default mode injects _name and _path", async () => {

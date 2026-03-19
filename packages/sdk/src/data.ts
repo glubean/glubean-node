@@ -4,9 +4,10 @@
  * These helpers load test data from various file formats and directories,
  * returning plain arrays suitable for `test.each()`.
  *
- * All paths are **relative to the project root** (the directory containing
- * `package.json`). The runner guarantees that `process.cwd()` points to the
- * project root at execution time.
+ * Path rules:
+ * - `./` and `../` paths are relative to the calling file
+ * - bare paths like `data/cases.csv` are relative to the project root
+ * - absolute paths are preserved as-is
  *
  * @module data
  *
@@ -46,10 +47,8 @@
  */
 
 import { readFile, readdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { dirname, resolve, isAbsolute } from "node:path";
-import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { resolveDataPath } from "./data-path.js";
 
 // =============================================================================
 // Shared utilities
@@ -63,67 +62,12 @@ function safeCwd(): string {
   }
 }
 
-/**
- * Resolve a relative path from the caller's file location.
- *
- * Uses `Error().stack` to find the first stack frame outside this module,
- * then resolves the path relative to that file's directory.
- *
- * Falls back to `process.cwd()` if the caller cannot be determined.
- */
-function resolveFromCaller(relativePath: string): string {
-  // Absolute paths don't need resolution
-  if (isAbsolute(relativePath)) return relativePath;
+function resolveLoaderPath(rawPath: string): string {
+  const resolved = resolveDataPath(rawPath, {
+    projectRoot: process.cwd(),
+  });
 
-  try {
-    const stack = new Error().stack;
-    if (!stack) return resolve(relativePath);
-
-    // Stack format (Node.js):
-    //   at functionName (file:///path/to/file.ts:line:col)
-    //   at file:///path/to/file.ts:line:col
-    const lines = stack.split("\n");
-    const thisFile = fileURLToPath(import.meta.url);
-
-    for (const line of lines) {
-      // Match both formats:
-      //   at func (file:///path/to/file.ts:line:col)
-      //   at func (/path/to/file.ts:line:col)
-      const fileUrlMatch = line.match(/\(?file:\/\/\/(.*?):\d+:\d+\)?/);
-      const plainPathMatch = !fileUrlMatch && line.match(/\(?(\/[^:]+):\d+:\d+\)?/);
-      const match = fileUrlMatch || plainPathMatch;
-      if (!match) continue;
-
-      let framePath: string;
-      try {
-        framePath = fileUrlMatch
-          ? fileURLToPath(`file:///${match[1]}`)
-          : match[1];
-      } catch {
-        continue;
-      }
-
-      // Skip frames from this module and the SDK package
-      if (framePath === thisFile) continue;
-      if (framePath.includes("@glubean/sdk/")) continue;
-      if (framePath.includes("packages/sdk/")) continue;
-      // Skip node internals and dependencies
-      if (framePath.includes("/node_modules/")) continue;
-
-      // Found the caller — try relative to their directory first,
-      // fall back to cwd if the path doesn't exist (backward compat)
-      const callerRelative = resolve(dirname(framePath), relativePath);
-      if (existsSync(callerRelative)) {
-        return callerRelative;
-      }
-      // Path doesn't exist relative to caller — fall back to cwd
-      return resolve(relativePath);
-    }
-  } catch {
-    // Fall back to cwd
-  }
-
-  return resolve(relativePath);
+  return resolved.resolvedPath;
 }
 
 function formatPathErrorContext(
@@ -132,16 +76,15 @@ function formatPathErrorContext(
   error: unknown,
 ): Error {
   const cwd = safeCwd();
-  const resolvedPath = cwd === "(unavailable)" ? path : resolve(cwd, path);
   const cause = error instanceof Error ? error : undefined;
   const reason = error instanceof Error ? error.message : String(error);
 
   return new Error(
     `Failed to ${action}: "${path}".\n` +
       `Current working directory: ${cwd}\n` +
-      `Resolved path: ${resolvedPath}\n` +
-      'Hint: data loader paths are resolved from project root (where "package.json" is).\n' +
-      'Hint: if your file is in the standard data folder, use a path like "./data/cases.csv".\n' +
+      `Resolved path: ${path}\n` +
+      'Hint: paths starting with "./" or "../" are resolved relative to the calling file.\n' +
+      'Hint: bare paths like "data/cases.csv" are resolved relative to the project root (where "package.json" is).\n' +
       `Cause: ${reason}`,
     cause ? { cause } : undefined,
   );
@@ -293,7 +236,7 @@ export interface FromCsvOptions {
 export async function fromCsv<
   T extends Record<string, string> = Record<string, string>,
 >(path: string, options?: FromCsvOptions): Promise<T[]> {
-  const resolved = resolveFromCaller(path);
+  const resolved = resolveLoaderPath(path);
   const content = await readTextFileWithContext(resolved);
   const separator = options?.separator ?? ",";
   const hasHeaders = options?.headers !== false;
@@ -412,7 +355,7 @@ export interface FromYamlOptions {
 export async function fromYaml<
   T extends Record<string, unknown> = Record<string, unknown>,
 >(path: string, options?: FromYamlOptions): Promise<T[]> {
-  const resolved = resolveFromCaller(path);
+  const resolved = resolveLoaderPath(path);
   const content = await readTextFileWithContext(resolved);
   const data = parseYaml(content);
   return extractArray<T>(data, options?.pick, resolved);
@@ -444,7 +387,7 @@ export async function fromYaml<
 export async function fromJsonl<
   T extends Record<string, unknown> = Record<string, unknown>,
 >(path: string): Promise<T[]> {
-  const resolved = resolveFromCaller(path);
+  const resolved = resolveLoaderPath(path);
   const content = await readTextFileWithContext(resolved);
   const lines = content.split("\n").filter((line) => line.trim() !== "");
   return lines.map((line, index) => {
@@ -528,7 +471,7 @@ export interface FromDirConcatOptions extends FromDirOptions {
 export async function fromDir<
   T extends Record<string, unknown> = Record<string, unknown>,
 >(path: string, options?: FromDirOptions): Promise<T[]> {
-  const resolved = resolveFromCaller(path);
+  const resolved = resolveLoaderPath(path);
   const files = await _collectAndSort(resolved, options);
 
   if (files.length === 0) {
@@ -581,7 +524,7 @@ export async function fromDir<
 fromDir.concat = async function fromDirConcat<
   T extends Record<string, unknown> = Record<string, unknown>,
 >(path: string, options?: FromDirConcatOptions): Promise<T[]> {
-  const resolved = resolveFromCaller(path);
+  const resolved = resolveLoaderPath(path);
   const files = await _collectAndSort(resolved, options);
 
   if (files.length === 0) {
@@ -626,7 +569,7 @@ fromDir.concat = async function fromDirConcat<
 fromDir.merge = async function fromDirMerge<
   T extends Record<string, unknown> = Record<string, unknown>,
 >(path: string, options?: FromDirOptions): Promise<Record<string, T>> {
-  const resolved = resolveFromCaller(path);
+  const resolved = resolveLoaderPath(path);
   const files = await _collectAndSort(resolved, options);
 
   const result: Record<string, T> = {};
