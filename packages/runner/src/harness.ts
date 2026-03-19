@@ -227,24 +227,6 @@ let stepAssertionTotal = 0;
 // Used to tag log/assertion/trace/metric events with their containing step.
 let currentStepIndex: number | null = null;
 
-// Test-level assertion and step counters.
-// Accumulated across the entire test execution for the summary event.
-let totalAssertions = 0;
-let totalFailedAssertions = 0;
-let totalSteps = 0;
-let passedSteps = 0;
-let failedSteps = 0;
-let skippedSteps = 0;
-
-// Warning counters — tracked separately from assertions.
-// Warnings never affect test pass/fail status.
-let warningTotal = 0;
-let warningTriggered = 0;
-
-// Schema validation counters.
-let schemaValidationTotal = 0;
-let schemaValidationFailed = 0;
-let schemaValidationWarnings = 0;
 
 /**
  * Start monitoring memory usage.
@@ -365,8 +347,6 @@ function runSchemaValidation<T>(
   label: string,
   severity: "error" | "warn" | "fatal",
 ): { success: true; data: T } | { success: false; issues: SchemaIssue[] } {
-  schemaValidationTotal++;
-
   let success = false;
   let parsed: T | undefined;
   let issues: SchemaIssue[] = [];
@@ -432,16 +412,13 @@ function runSchemaValidation<T>(
 
     switch (severity) {
       case "error":
-        schemaValidationFailed++;
         // Route through assertion pipeline so it counts as a failed assertion
         ctx.assert(false, msg);
         break;
       case "warn":
-        schemaValidationWarnings++;
         ctx.warn(false, msg);
         break;
       case "fatal":
-        schemaValidationFailed++;
         // Emit failed assertion, then throw to abort
         ctx.assert(false, msg);
         throw new FailError(msg);
@@ -565,12 +542,10 @@ const ctx = {
         (passed ? "Assertion passed" : "Assertion failed");
     }
 
-    // Track per-step and test-level assertion stats
+    // Track per-step assertion stats (used for step retry logic + step_end event)
     stepAssertionTotal++;
-    totalAssertions++;
     if (!passed) {
       stepFailedAssertions++;
-      totalFailedAssertions++;
     }
 
     console.log(
@@ -604,10 +579,6 @@ const ctx = {
   // Warning function — soft check, never affects test pass/fail.
   // condition=true means OK; condition=false triggers warning.
   warn: (condition: boolean, message: string) => {
-    warningTotal++;
-    if (!condition) {
-      warningTriggered++;
-    }
     console.log(
       JSON.stringify({
         type: "warning",
@@ -848,12 +819,6 @@ function truncateBody(body: unknown): unknown {
   }
 }
 
-let summaryEmitted = false;
-
-/**
- * Emit summary event with HTTP, assertion, and step totals.
- * Called once before the final status event. Idempotent.
- */
 /**
  * Reset per-test counters for file-level batch mode.
  * Called before each test when running multiple tests in a single process.
@@ -862,52 +827,9 @@ function resetTestCounters() {
   stepFailedAssertions = 0;
   stepAssertionTotal = 0;
   currentStepIndex = null;
-  totalAssertions = 0;
-  totalFailedAssertions = 0;
-  totalSteps = 0;
-  passedSteps = 0;
-  failedSteps = 0;
-  skippedSteps = 0;
-  warningTotal = 0;
-  warningTriggered = 0;
-  schemaValidationTotal = 0;
-  schemaValidationFailed = 0;
-  schemaValidationWarnings = 0;
   httpRequestTotal = 0;
   httpErrorTotal = 0;
-  summaryEmitted = false;
   peakMemoryBytes = 0;
-}
-
-function emitSummary() {
-  if (summaryEmitted) return;
-  summaryEmitted = true;
-  console.log(
-    JSON.stringify({
-      type: "summary",
-      data: {
-        // HTTP stats (always present, 0 when no HTTP calls)
-        httpRequestTotal,
-        httpErrorTotal,
-        httpErrorRate: httpRequestTotal > 0 ? Math.round((httpErrorTotal / httpRequestTotal) * 10000) / 10000 : 0,
-        // Assertion stats
-        assertionTotal: totalAssertions,
-        assertionFailed: totalFailedAssertions,
-        // Warning stats
-        warningTotal,
-        warningTriggered,
-        // Schema validation stats
-        schemaValidationTotal,
-        schemaValidationFailed,
-        schemaValidationWarnings,
-        // Step stats (0 for simple tests without builder steps)
-        stepTotal: totalSteps,
-        stepPassed: passedSteps,
-        stepFailed: failedSteps,
-        stepSkipped: skippedSteps,
-      },
-    }),
-  );
 }
 
 const MAX_NETWORK_WARNINGS_PER_CODE = 3;
@@ -1508,7 +1430,7 @@ try {
       try {
         await executeNewTest(testObj);
       } catch (error) {
-        emitSummary();
+
         if (error instanceof SkipError) {
           console.log(
             JSON.stringify({
@@ -1549,7 +1471,7 @@ try {
       try {
         await executeNewTest(obj);
       } catch (error) {
-        emitSummary();
+
         if (error instanceof SkipError) {
           console.log(JSON.stringify({ type: "status", status: "skipped", id: resolved.id, reason: (error as SkipError).reason }));
         } else {
@@ -1581,9 +1503,6 @@ try {
     );
   }
 } catch (error) {
-  // Emit HTTP summary before final status
-  emitSummary();
-
   // Check if this is a skip error
   if (error instanceof SkipError) {
     console.log(
@@ -1752,13 +1671,11 @@ async function executeNewTest(test: Test<unknown>): Promise<void> {
             state = await test.setup(effectiveCtx);
           }
           if (test.steps) {
-            totalSteps = test.steps.length;
             for (let i = 0; i < test.steps.length; i++) {
               const step = test.steps[i];
 
               // If a previous step failed, skip remaining steps
               if (stepFailed) {
-                skippedSteps++;
                 console.log(
                   JSON.stringify({
                     type: "step_end",
@@ -1909,11 +1826,8 @@ async function executeNewTest(test: Test<unknown>): Promise<void> {
               currentStepIndex = null;
 
               if (failed) {
-                failedSteps++;
                 stepFailed = true;
                 // Don't throw here — let the loop continue to emit skip events
-              } else {
-                passedSteps++;
               }
             }
           }
@@ -1942,8 +1856,6 @@ async function executeNewTest(test: Test<unknown>): Promise<void> {
 
         // If any step failed (assertion or throw), mark overall test as failed
         if (stepFailed) {
-          // Emit summary before throwing so that step/assertion counts are reported
-          emitSummary();
           throw new Error("One or more steps failed");
         }
       }
@@ -1958,9 +1870,6 @@ async function executeNewTest(test: Test<unknown>): Promise<void> {
 
     // Stop monitoring and get peak memory
     const peakBytes = stopMemoryMonitoring();
-
-    // Emit summary before final status
-    emitSummary();
 
     console.log(
       JSON.stringify({

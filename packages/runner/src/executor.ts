@@ -6,7 +6,7 @@ import { dirname, resolve, join } from "node:path";
 import { createRequire } from "node:module";
 import type { ApiTrace, GlubeanAction, GlubeanEvent } from "@glubean/sdk";
 import type { SharedRunConfig } from "./config.js";
-import { deriveFailureFromEvents } from "./derive_failure.js";
+import { generateSummary } from "./generate_summary.js";
 
 const DEFAULT_CONCURRENCY = 1;
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -623,8 +623,11 @@ export class TestExecutor {
       }
     }
 
-    // Override success based on events (authoritative, not harness counters)
-    if (deriveFailureFromEvents(events)) success = false;
+    // Override success based on timeline events (catches soft assertion failures
+    // that the harness status event may miss).  Never flip a failure back to success —
+    // status/error events from the harness are authoritative for hard failures.
+    const summary = generateSummary(events);
+    if (!summary.success) success = false;
 
     return {
       success, testId, testName, suiteId, suiteName, events, error, stack,
@@ -677,4 +680,5 @@ export class TestExecutor {
 }
 
 // Re-export for consumers
-export { deriveFailureFromEvents } from "./derive_failure.js";
+export { generateSummary } from "./generate_summary.js";
+export type { Summary } from "./generate_summary.js";

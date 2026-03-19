@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { TestExecutor } from "./executor.js";
 import type { ExecutionEvent, ExecutorOptions, TimelineEvent } from "./executor.js";
 import { LOCAL_RUN_DEFAULTS, SHARED_RUN_DEFAULTS, WORKER_RUN_DEFAULTS } from "./config.js";
+import { generateSummary } from "./generate_summary.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -1078,7 +1079,7 @@ test("ExecutionResult - assertionCount with multi-step test", async () => {
 // summary event enrichment
 // =============================================================================
 
-test("summary event - includes assertion and step counts", async () => {
+test("generateSummary - includes assertion and step counts", async () => {
   const testFile = await makeTempFile(AUTO_BUILD_TEST_CONTENT);
   const executor = new TestExecutor();
 
@@ -1088,21 +1089,16 @@ test("summary event - includes assertion and step counts", async () => {
     { vars: {}, secrets: {} },
   );
 
-  const summaries = result.events.filter(
-    (e): e is Extract<TimelineEvent, { type: "summary" }> => e.type === "summary",
-  );
-  expect(summaries.length).toBe(1);
-
-  const summary = summaries[0];
-  expect(summary.data.assertionTotal).toBe(2);
-  expect(summary.data.assertionFailed).toBe(0);
-  expect(summary.data.stepTotal).toBe(2);
-  expect(summary.data.stepPassed).toBe(2);
-  expect(summary.data.stepFailed).toBe(0);
-  expect(summary.data.stepSkipped).toBe(0);
+  const summary = generateSummary(result.events);
+  expect(summary.assertionTotal).toBe(2);
+  expect(summary.assertionFailed).toBe(0);
+  expect(summary.stepTotal).toBe(2);
+  expect(summary.stepPassed).toBe(2);
+  expect(summary.stepFailed).toBe(0);
+  expect(summary.stepSkipped).toBe(0);
 });
 
-test("summary event - step failure counts", async () => {
+test("generateSummary - step failure counts", async () => {
   const testFile = await makeTempFile(AUTO_BUILD_TEST_CONTENT);
   const executor = new TestExecutor();
 
@@ -1112,18 +1108,13 @@ test("summary event - step failure counts", async () => {
     { vars: {}, secrets: {} },
   );
 
-  const summaries = result.events.filter(
-    (e): e is Extract<TimelineEvent, { type: "summary" }> => e.type === "summary",
-  );
-  expect(summaries.length).toBe(1);
-
-  const summary = summaries[0];
-  expect(summary.data.stepTotal).toBe(3);
-  expect(summary.data.stepPassed).toBe(1);
-  expect(summary.data.stepFailed).toBe(1);
-  expect(summary.data.stepSkipped).toBe(1);
-  expect(summary.data.assertionTotal).toBe(3);
-  expect(summary.data.assertionFailed).toBe(2);
+  const summary = generateSummary(result.events);
+  expect(summary.stepTotal).toBe(3);
+  expect(summary.stepPassed).toBe(1);
+  expect(summary.stepFailed).toBe(1);
+  expect(summary.stepSkipped).toBe(1);
+  expect(summary.assertionTotal).toBe(3);
+  expect(summary.assertionFailed).toBe(2);
 });
 
 // =============================================================================
@@ -1177,7 +1168,7 @@ test("ctx.warn - warning-only test still passes", async () => {
   expect(assertions.length).toBe(0);
 });
 
-test("ctx.warn - summary includes warning counters", async () => {
+test("ctx.warn - generateSummary includes warning counters", async () => {
   const testFile = await makeTempFile(TEST_FILE_CONTENT);
   const executor = new TestExecutor();
 
@@ -1186,14 +1177,9 @@ test("ctx.warn - summary includes warning counters", async () => {
     secrets: {},
   });
 
-  const summaries = result.events.filter(
-    (e): e is Extract<TimelineEvent, { type: "summary" }> => e.type === "summary",
-  );
-  expect(summaries.length).toBe(1);
-
-  const summary = summaries[0];
-  expect(summary.data.warningTotal).toBe(3);
-  expect(summary.data.warningTriggered).toBe(2);
+  const summary = generateSummary(result.events);
+  expect(summary.warningTotal).toBe(3);
+  expect(summary.warningTriggered).toBe(2);
 });
 
 // =============================================================================
@@ -1383,7 +1369,7 @@ test("ctx.validate - parse fallback (no safeParse)", async () => {
   expect(validations[1].success).toBe(false);
 });
 
-test("ctx.validate - summary includes schema validation counters", async () => {
+test("ctx.validate - generateSummary includes schema validation counters", async () => {
   const testFile = await makeTempFile(VALIDATE_TEST_CONTENT);
   const executor = new TestExecutor();
 
@@ -1393,15 +1379,10 @@ test("ctx.validate - summary includes schema validation counters", async () => {
     { vars: {}, secrets: {} },
   );
 
-  const summaries = result.events.filter(
-    (e): e is Extract<TimelineEvent, { type: "summary" }> => e.type === "summary",
-  );
-  expect(summaries.length).toBe(1);
-
-  const summary = summaries[0];
-  expect(summary.data.schemaValidationTotal).toBe(1);
-  expect(summary.data.schemaValidationFailed).toBe(0);
-  expect(summary.data.schemaValidationWarnings).toBe(1);
+  const summary = generateSummary(result.events);
+  expect(summary.schemaValidationTotal).toBe(1);
+  expect(summary.schemaValidationFailed).toBe(0);
+  expect(summary.schemaValidationWarnings).toBe(1);
 });
 
 // =============================================================================
@@ -2068,7 +2049,7 @@ export const notAwaitedFixture = myTest(
 );
 `;
 
-test("test.extend() - use() not awaited still completes test body before summary", async () => {
+test("test.extend() - use() not awaited still completes test body", async () => {
   const testFile = await makeTempFile(FIXTURE_USE_NOT_AWAITED_CONTENT);
   const executor = new TestExecutor();
 
@@ -2083,10 +2064,6 @@ test("test.extend() - use() not awaited still completes test body before summary
   const assertions = getAssertions(result.events);
   expect(assertions.length).toBe(1);
   expect(assertions[0].passed).toBe(true);
-
-  const summaryIdx = result.events.findIndex((e) => e.type === "summary");
-  const assertionIdx = result.events.findIndex((e) => e.type === "assertion");
-  expect(assertionIdx < summaryIdx).toBe(true);
 });
 
 // ---------------------------------------------------------------------------

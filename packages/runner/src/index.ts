@@ -1,7 +1,8 @@
-export { deriveFailureFromEvents, TestExecutor } from "./executor.js";
+export { generateSummary, TestExecutor } from "./executor.js";
 export type {
   EventHandler,
   ExecutionBatchResult,
+  Summary,
   ExecutionContext,
   ExecutionEvent,
   ExecutionNetworkPolicy,

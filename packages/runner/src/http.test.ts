@@ -12,6 +12,7 @@ import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TestExecutor } from "./executor.js";
 import type { TimelineEvent } from "./executor.js";
+import { generateSummary } from "./generate_summary.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -421,10 +422,7 @@ export const httpSummary = test("httpSummary", async (ctx) => {
 
     expect(result.success).toBe(true);
 
-    const summaries = getSummaries(result.events);
-    expect(summaries.length).toBe(1);
-
-    const summary = summaries[0].data;
+    const summary = generateSummary(result.events);
     expect(summary.httpRequestTotal).toBe(3);
     expect(summary.httpErrorTotal).toBe(1);
     expect(summary.httpErrorRate).toBe(
@@ -449,9 +447,8 @@ export const noHttp = test("noHttp", async (ctx) => {
 
   expect(result.success).toBe(true);
 
-  const summaries = getSummaries(result.events);
-  expect(summaries.length).toBe(1);
-  expect(summaries[0].data.httpRequestTotal).toBe(0);
+  const summary = generateSummary(result.events);
+  expect(summary.httpRequestTotal).toBe(0);
 });
 
 test("ctx.http - summary with all successful requests", async () => {
@@ -471,10 +468,7 @@ export const httpAllOk = test("httpAllOk", async (ctx) => {
 
     expect(result.success).toBe(true);
 
-    const summaries = getSummaries(result.events);
-    expect(summaries.length).toBe(1);
-
-    const summary = summaries[0].data;
+    const summary = generateSummary(result.events);
     expect(summary.httpRequestTotal).toBe(2);
     expect(summary.httpErrorTotal).toBe(0);
     expect(summary.httpErrorRate).toBe(0);
