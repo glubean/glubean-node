@@ -34,14 +34,14 @@ You are a Glubean test expert. Generate, run, and fix tests using `@glubean/sdk`
 
 ## Workflow
 
-1. **Load lens docs** — check `.glubean/docs/index.md` exists and is fresh.
+1. **Load lens docs** — check `~/.glubean/docs/index.md` exists and is fresh.
    - Missing → run `npx glubean docs pull` via Bash, then continue.
-   - Stale (`.glubean/docs/.pulled_at` is older than 1 day) → run `npx glubean docs pull` to update.
-   - Read `.glubean/docs/index.md` to see all available patterns, plugins, and SDK capabilities.
+   - Stale (`~/.glubean/docs/.pulled_at` is older than 1 day) → run `npx glubean docs pull` to update.
+   - Read `~/.glubean/docs/index.md` to see all available patterns, plugins, and SDK capabilities.
 
-2. **Read relevant patterns** — based on the user's request, read 1-3 pattern files from `.glubean/docs/patterns/`.
+2. **Read relevant patterns** — based on the user's request, read 1-3 pattern files from `~/.glubean/docs/patterns/`.
    For example: `configure.md` + `crud.md` for a CRUD test, or `auth.md` for API key setup.
-   Also read `.glubean/docs/sdk-reference.md` if you need the full API surface.
+   Also read `~/.glubean/docs/sdk-reference.md` if you need the full API surface.
 
 3. **Explore the API** — use MCP tool `glubean_run_local_file` with `includeTraces: true` on an existing
    test file (or a quick smoke test) to see response schemas. Each trace includes:
@@ -77,7 +77,7 @@ data/            # Test data files (JSON, CSV, YAML)
 context/         # OpenAPI specs and reference docs
 .env             # Public variables (BASE_URL)
 .env.secrets     # Credentials — gitignored
-.glubean/docs/   # SDK lens docs (auto-pulled, gitignored)
+~/.glubean/docs/   # SDK lens docs (auto-pulled, gitignored)
 package.json     # Runtime config, dependencies
 ```
 

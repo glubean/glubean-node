@@ -391,8 +391,7 @@ const docsCmd = program
 
 docsCmd
   .command("pull")
-  .description("Download @glubean/lens (SDK reference + patterns) to .glubean/docs/")
-  .option("--dir <path>", "Project root directory")
+  .description("Download @glubean/lens (SDK reference + patterns) to ~/.glubean/docs/")
   .action(async (options) => {
     await docsPullCommand({ dir: options.dir });
   });

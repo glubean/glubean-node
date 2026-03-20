@@ -1,14 +1,15 @@
 /**
- * glubean docs pull — download @glubean/lens to .glubean/docs/
+ * glubean docs pull — download @glubean/lens to ~/.glubean/docs/
  *
  * Uses `npm pack` to fetch the package tarball, then extracts markdown files.
  * Writes a .pulled_at timestamp for staleness checking by AI skills.
+ * Stored globally so all projects share the same docs.
  */
 
 import { execSync } from "node:child_process";
 import { mkdir, writeFile, rm, readdir, copyFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 
 const PACKAGE_NAME = "@glubean/lens";
 
@@ -17,8 +18,8 @@ interface DocsPullOptions {
 }
 
 export async function docsPullCommand(options: DocsPullOptions): Promise<void> {
-  const projectRoot = resolve(options.dir ?? process.cwd());
-  const docsDir = join(projectRoot, ".glubean", "docs");
+  const globalRoot = join(homedir(), ".glubean");
+  const docsDir = join(globalRoot, "docs");
   const tmpDir = join(tmpdir(), `glubean-lens-${Date.now()}`);
 
   try {
@@ -46,13 +47,11 @@ export async function docsPullCommand(options: DocsPullOptions): Promise<void> {
     // 4. Write timestamp
     await writeFile(join(docsDir, ".pulled_at"), new Date().toISOString() + "\n");
 
-    // 5. Ensure .gitignore covers .glubean/
-    await ensureGitignore(projectRoot);
-
     console.log(`✓ Lens docs pulled to ${docsDir}`);
     const files = await countFiles(docsDir);
     console.log(`  ${files} files (index + sdk-reference + cli-reference + patterns)`);
-    console.log(`  Timestamp: .glubean/docs/.pulled_at`);
+    console.log(`  Timestamp: ~/.glubean/docs/.pulled_at`);
+    console.log(`  Shared globally across all projects.`);
   } catch (err: any) {
     if (err.message?.includes("E404") || err.stderr?.includes("E404")) {
       console.error(`✗ Package ${PACKAGE_NAME} not found on npm. It may not be published yet.`);
@@ -78,22 +77,6 @@ async function copyRecursive(src: string, dest: string): Promise<void> {
     } else {
       await copyFile(srcPath, destPath);
     }
-  }
-}
-
-async function ensureGitignore(projectRoot: string): Promise<void> {
-  const gitignorePath = join(projectRoot, ".gitignore");
-  let content = "";
-  try {
-    const { readFile } = await import("node:fs/promises");
-    content = await readFile(gitignorePath, "utf-8");
-  } catch {
-    // No .gitignore yet
-  }
-
-  if (!content.includes(".glubean/")) {
-    content = content.trimEnd() + (content.trim() ? "\n" : "") + ".glubean/\n";
-    await writeFile(gitignorePath, content);
   }
 }
 
